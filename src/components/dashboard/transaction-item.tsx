@@ -6,7 +6,6 @@ import {
   Bus,
   Film,
   Briefcase,
-  PiggyBank,
   CircleDollarSign,
   Wifi,
   ShoppingBag,
@@ -16,10 +15,11 @@ import {
   ArrowRightLeft,
 } from "lucide-react";
 import { Transaction } from "@/types/finance";
-import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { formatCurrency, formatDateTime, formatTimeOnly, cn } from "@/lib/utils";
 
 interface TransactionItemProps {
   transaction: Transaction;
+  showTimeOnly?: boolean;
   className?: string;
   onClick?: (transaction: Transaction) => void;
 }
@@ -46,6 +46,7 @@ const categoryIcons: Record<string, React.ElementType> = {
 
 export function TransactionItem({
   transaction,
+  showTimeOnly = false,
   className,
   onClick,
 }: TransactionItemProps) {
@@ -68,6 +69,10 @@ export function TransactionItem({
 
   const displayDate =
     transaction.transaction_date || transaction.date || new Date().toISOString();
+
+  const formattedDateTime = showTimeOnly
+    ? formatTimeOnly(displayDate)
+    : formatDateTime(displayDate);
 
   const CategoryIcon = isTransfer
     ? ArrowRightLeft
@@ -128,8 +133,8 @@ export function TransactionItem({
           {isIncome ? "+" : isTransfer ? "⇄ " : "-"}
           {formatCurrency(transaction.amount)}
         </p>
-        <p className="text-xs text-slate-400 mt-0.5">
-          {formatDate(displayDate)}
+        <p className="text-xs text-slate-400 mt-0.5" title="User local time">
+          {formattedDateTime}
         </p>
       </div>
     </div>
