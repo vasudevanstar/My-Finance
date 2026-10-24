@@ -261,7 +261,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         supabase
           .from("transactions")
           .select(
-            "id, user_id, account_id, category_id, type, amount, description, transaction_date, source_account_id, destination_account_id, created_at, accounts(id, name), categories(id, name)"
+            "id, user_id, account_id, category_id, type, amount, description, transaction_date, source_account_id, destination_account_id, created_at"
           )
           .order("transaction_date", { ascending: false }),
         supabase
@@ -300,12 +300,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       }));
 
       const accountsMap = new Map(dbAccounts.map((a) => [a.id, a.name]));
+      const categoriesMap = new Map(dbCategories.map((c) => [c.id, c.name]));
 
       const dbTransactions: Transaction[] = (txRes.data || []).map((t: any) => {
         const sourceName = t.source_account_id ? accountsMap.get(t.source_account_id) : undefined;
         const destName = t.destination_account_id ? accountsMap.get(t.destination_account_id) : undefined;
-        const accName = t.accounts?.name || accountsMap.get(t.account_id) || (sourceName && destName ? `${sourceName} → ${destName}` : "Account");
-        const catName = t.categories?.name || (t.type === "transfer" ? "Transfer" : "Other");
+        const accName = accountsMap.get(t.account_id) || (sourceName && destName ? `${sourceName} → ${destName}` : "Account");
+        const catName = categoriesMap.get(t.category_id) || (t.type === "transfer" ? "Transfer" : "Other");
 
         return {
           id: t.id,
