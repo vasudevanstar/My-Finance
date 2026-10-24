@@ -51,6 +51,7 @@ interface FinanceContextType {
   chartData: Array<{ month: string; income: number; expense: number }>;
   metrics: DashboardMetrics;
   isLoading: boolean;
+  loadError: string | null;
   addTransaction: (
     input: AddTransactionInput
   ) => Promise<{ success: boolean; error?: string }>;
@@ -68,46 +69,71 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const { user, isConfigured } = useAuth();
   const supabase = React.useMemo(() => createClient(), []);
 
-  const [accounts, setAccounts] = React.useState<Account[]>(initialAccounts);
-  const [transactions, setTransactions] =
-    React.useState<Transaction[]>(initialTransactions);
-  const [categories, setCategories] =
-    React.useState<Category[]>(initialCategories);
-  const [savingsGoals, setSavingsGoals] =
-    React.useState<SavingsGoal[]>(initialSavingsGoals);
+  const [accounts, setAccounts] = React.useState<Account[]>(() =>
+    !isConfigured ? initialAccounts : []
+  );
+  const [transactions, setTransactions] = React.useState<Transaction[]>(() =>
+    !isConfigured ? initialTransactions : []
+  );
+  const [categories, setCategories] = React.useState<Category[]>(() =>
+    !isConfigured ? initialCategories : []
+  );
+  const [savingsGoals, setSavingsGoals] = React.useState<SavingsGoal[]>(() =>
+    !isConfigured ? initialSavingsGoals : []
+  );
   const [chartData, setChartData] = React.useState(monthlyOverviewData);
-  const [isLoading, setIsLoading] = React.useState<boolean>(false);
+  const [isLoading, setIsLoading] = React.useState<boolean>(isConfigured);
+  const [loadError, setLoadError] = React.useState<string | null>(null);
 
-  // Compute live dashboard metrics from state
-  // CRITICAL REQUIREMENT: Transfers must NOT affect totalIncome or totalExpenses!
+  // Compute live balances & totals purely from transactions & accounts
+  // TRANSFERS DO NOT COUNT TOWARDS INCOME OR EXPENSES
   const metrics: DashboardMetrics = React.useMemo(() => {
-    const totalBalance = accounts.reduce(
-      (sum, acc) => sum + (acc.current_balance ?? acc.balance ?? 0),
+    // 1. Calculate per-account net balance from transactions
+    // Each account balance = opening_balance + sum(income into acc) - sum(expense from acc) + sum(transfers into acc) - sum(transfers out of acc)
+    const computedAccounts = accounts.map((acc) => {
+      const accTxs = transactions.filter(
+        (t) =>
+          t.account_id === acc.id ||
+          t.source_account_id === acc.id ||
+          t.destination_account_id === acc.id
+      );
+
+      let balance = acc.opening_balance ?? 0;
+      for (const t of accTxs) {
+        if (t.type === "income" && t.account_id === acc.id) {
+          balance += t.amount;
+        } else if (t.type === "expense" && t.account_id === acc.id) {
+          balance -= t.amount;
+        } else if (t.type === "transfer") {
+          if (t.destination_account_id === acc.id) {
+            balance += t.amount;
+          }
+          if (t.source_account_id === acc.id) {
+            balance -= t.amount;
+          }
+        }
+      }
+      return { ...acc, current_balance: balance };
+    });
+
+    const totalBalance = computedAccounts.reduce(
+      (sum, acc) => sum + acc.current_balance,
       0
     );
 
-    const bankBalance = accounts
+    const bankBalance = computedAccounts
       .filter((acc) => acc.type === "bank")
-      .reduce(
-        (sum, acc) => sum + (acc.current_balance ?? acc.balance ?? 0),
-        0
-      );
+      .reduce((sum, acc) => sum + acc.current_balance, 0);
 
-    const cashInHand = accounts
+    const cashInHand = computedAccounts
       .filter((acc) => acc.type === "cash")
-      .reduce(
-        (sum, acc) => sum + (acc.current_balance ?? acc.balance ?? 0),
-        0
-      );
+      .reduce((sum, acc) => sum + acc.current_balance, 0);
 
-    const savingsTotal = accounts
+    const savingsTotal = computedAccounts
       .filter((acc) => acc.type === "savings")
-      .reduce(
-        (sum, acc) => sum + (acc.current_balance ?? acc.balance ?? 0),
-        0
-      );
+      .reduce((sum, acc) => sum + acc.current_balance, 0);
 
-    // Only count pure income and expense types
+    // Strictly count ONLY income and expense; Transfers are excluded
     const totalIncome = transactions
       .filter((t) => t.type === "income")
       .reduce((sum, t) => sum + t.amount, 0);
@@ -128,141 +154,161 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     };
   }, [accounts, transactions]);
 
-  // Distinct transfers list
   const transfers = React.useMemo(() => {
     return transactions.filter((t) => t.type === "transfer");
   }, [transactions]);
 
-  // Load user data from Supabase if authenticated and tables exist
+  // Dynamic monthly chart calculated from real transaction dates
+  const updateMonthlyChart = React.useCallback(
+    (txs: Transaction[]) => {
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const now = new Date();
+      const last6Months: Array<{ month: string; income: number; expense: number; monthKey: string }> = [];
+
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const monthName = monthNames[d.getMonth()];
+        const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        last6Months.push({ month: monthName, income: 0, expense: 0, monthKey });
+      }
+
+      for (const t of txs) {
+        if (t.type === "transfer") continue; // NEVER count transfers in charts!
+        const txMonth = (t.transaction_date || t.date || "").slice(0, 7);
+        const match = last6Months.find((m) => m.monthKey === txMonth);
+        if (match) {
+          if (t.type === "income") {
+            match.income += t.amount;
+          } else if (t.type === "expense") {
+            match.expense += t.amount;
+          }
+        }
+      }
+
+      setChartData(
+        last6Months.map(({ month, income, expense }) => ({ month, income, expense }))
+      );
+    },
+    []
+  );
+
+  // Load real data from Supabase
   const loadSupabaseData = React.useCallback(async () => {
-    if (!isConfigured || !user) return;
+    if (!isConfigured || !user) {
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
+    setLoadError(null);
 
     try {
-      // 1. Fetch Accounts
-      const { data: dbAccounts, error: accError } = await supabase
-        .from("accounts")
-        .select("*")
-        .order("created_at", { ascending: false });
+      // 1. Efficient parallel queries using user isolation
+      const [accRes, catRes, txRes, goalRes] = await Promise.all([
+        supabase
+          .from("accounts")
+          .select("id, user_id, name, type, opening_balance, current_balance, created_at, updated_at")
+          .order("created_at", { ascending: true }),
+        supabase
+          .from("categories")
+          .select("id, user_id, name, type, icon, is_system, created_at")
+          .order("name", { ascending: true }),
+        supabase
+          .from("transactions")
+          .select(
+            "id, user_id, account_id, category_id, type, amount, description, transaction_date, source_account_id, destination_account_id, created_at, accounts(id, name), categories(id, name)"
+          )
+          .order("transaction_date", { ascending: false }),
+        supabase
+          .from("savings_goals")
+          .select("id, user_id, name, target_amount, target_date, description, created_at, updated_at")
+          .order("created_at", { ascending: false }),
+      ]);
 
-      if (!accError && dbAccounts && dbAccounts.length > 0) {
-        setAccounts(
-          dbAccounts.map((a: any) => ({
-            id: a.id,
-            user_id: a.user_id,
-            name: a.name,
-            type: a.type,
-            opening_balance: Number(a.opening_balance),
-            current_balance: Number(a.current_balance),
-            balance: Number(a.current_balance),
-            accountNumberMasked: a.type === "cash" ? "Cash Pocket" : "•••• Bank",
-            institution: a.type === "cash" ? "Cash Wallet" : "Campus Bank",
-          }))
-        );
-      }
+      if (accRes.error) throw new Error(accRes.error.message);
+      if (catRes.error) throw new Error(catRes.error.message);
+      if (txRes.error) throw new Error(txRes.error.message);
+      if (goalRes.error) throw new Error(goalRes.error.message);
 
-      // 2. Fetch Categories
-      const { data: dbCategories, error: catError } = await supabase
-        .from("categories")
-        .select("*")
-        .order("name", { ascending: true });
+      const dbAccounts: Account[] = (accRes.data || []).map((a: any) => ({
+        id: a.id,
+        user_id: a.user_id,
+        name: a.name,
+        type: a.type,
+        opening_balance: Number(a.opening_balance) || 0,
+        current_balance: Number(a.current_balance) || 0,
+        balance: Number(a.current_balance) || 0,
+        accountNumberMasked: a.type === "cash" ? "Cash Wallet" : "•••• Bank",
+        institution: a.type === "cash" ? "Physical Cash" : "Bank Account",
+      }));
 
-      if (!catError && dbCategories && dbCategories.length > 0) {
-        setCategories(
-          dbCategories.map((c: any) => ({
-            id: c.id,
-            name: c.name,
-            type: c.type,
-            icon: c.icon,
-            is_system: c.is_system,
-          }))
-        );
-      }
+      const dbCategories: Category[] = (catRes.data || []).map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        type: c.type,
+        icon: c.icon,
+        is_system: c.is_system,
+      }));
 
-      // 3. Fetch Transactions
-      const { data: dbTransactions, error: txError } = await supabase
-        .from("transactions")
-        .select("*, accounts(name), categories(name)")
-        .order("transaction_date", { ascending: false });
+      // Map transactions with account names
+      const accountsMap = new Map(dbAccounts.map((a) => [a.id, a.name]));
 
-      if (!txError && dbTransactions && dbTransactions.length > 0) {
-        setTransactions(
-          dbTransactions.map((t: any) => ({
-            id: t.id,
-            user_id: t.user_id,
-            account_id: t.account_id,
-            account_name: t.accounts?.name || "Account",
-            category_id: t.category_id,
-            category_name: t.categories?.name || (t.type === "transfer" ? "Transfer" : "Other"),
-            type: t.type,
-            amount: Number(t.amount),
-            description: t.description || "",
-            transaction_date: t.transaction_date,
-            source_account_id: t.source_account_id,
-            destination_account_id: t.destination_account_id,
-            title: t.description || t.categories?.name || (t.type === "transfer" ? "Transfer" : "Transaction"),
-            category: t.categories?.name || (t.type === "transfer" ? "Transfer" : "Other"),
-            account: t.accounts?.name || "Account",
-            date: t.transaction_date.split("T")[0],
-          }))
-        );
-      }
+      const dbTransactions: Transaction[] = (txRes.data || []).map((t: any) => {
+        const sourceName = t.source_account_id ? accountsMap.get(t.source_account_id) : undefined;
+        const destName = t.destination_account_id ? accountsMap.get(t.destination_account_id) : undefined;
+        const accName = t.accounts?.name || accountsMap.get(t.account_id) || (sourceName && destName ? `${sourceName} → ${destName}` : "Account");
+        const catName = t.categories?.name || (t.type === "transfer" ? "Transfer" : "Other");
 
-      // 4. Fetch Savings Goals
-      const { data: dbGoals, error: goalError } = await supabase
-        .from("savings_goals")
-        .select("*")
-        .order("created_at", { ascending: false });
+        return {
+          id: t.id,
+          user_id: t.user_id,
+          account_id: t.account_id,
+          account_name: accName,
+          category_id: t.category_id,
+          category_name: catName,
+          type: t.type,
+          amount: Number(t.amount),
+          description: t.description || "",
+          transaction_date: t.transaction_date,
+          source_account_id: t.source_account_id,
+          source_account_name: sourceName,
+          destination_account_id: t.destination_account_id,
+          destination_account_name: destName,
+          title: t.description || catName,
+          category: catName,
+          account: accName,
+          date: t.transaction_date.split("T")[0],
+        };
+      });
 
-      if (!goalError && dbGoals && dbGoals.length > 0) {
-        setSavingsGoals(
-          dbGoals.map((g: any) => ({
-            id: g.id,
-            user_id: g.user_id,
-            title: g.name,
-            name: g.name,
-            targetAmount: Number(g.target_amount),
-            target_amount: Number(g.target_amount),
-            currentAmount: 0,
-            targetDate: g.target_date || "2027-01-01",
-            category: "General",
-          }))
-        );
-      }
-    } catch (err) {
-      console.error("Error loading Supabase financial state:", err);
+      const dbGoals: SavingsGoal[] = (goalRes.data || []).map((g: any) => ({
+        id: g.id,
+        user_id: g.user_id,
+        title: g.name,
+        name: g.name,
+        targetAmount: Number(g.target_amount),
+        target_amount: Number(g.target_amount),
+        currentAmount: 0,
+        targetDate: g.target_date || "2027-01-01",
+        category: "General",
+      }));
+
+      setAccounts(dbAccounts);
+      setCategories(dbCategories);
+      setTransactions(dbTransactions);
+      setSavingsGoals(dbGoals);
+      updateMonthlyChart(dbTransactions);
+    } catch (err: any) {
+      console.error("Error loading real Supabase data:", err);
+      setLoadError(err.message || "Failed to load financial records from database.");
     } finally {
       setIsLoading(false);
     }
-  }, [isConfigured, user, supabase]);
+  }, [isConfigured, user, supabase, updateMonthlyChart]);
 
   React.useEffect(() => {
     loadSupabaseData();
   }, [loadSupabaseData]);
-
-  // Recalculate dynamic bar charts ONLY for income or expense (Transfers are ignored)
-  const updateChartFromTransaction = (type: TransactionType, amount: number) => {
-    if (type === "transfer") return; // TRANSFERS MUST NOT AFFECT SPENDING CHARTS
-
-    setChartData((prev) => {
-      const updated = [...prev];
-      const lastIdx = updated.length - 1;
-      if (lastIdx >= 0) {
-        if (type === "income") {
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            income: updated[lastIdx].income + amount,
-          };
-        } else if (type === "expense") {
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            expense: updated[lastIdx].expense + amount,
-          };
-        }
-      }
-      return updated;
-    });
-  };
 
   // Add Income / Expense Transaction Handler
   const addTransaction = async (
@@ -302,7 +348,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       date: input.transaction_date.split("T")[0],
     };
 
-    // 1. Optimistic Local State Update for Accounts & Balances
+    // Optimistic Local State Update for Accounts & Balances
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
         if (acc.id === input.account_id) {
@@ -322,16 +368,17 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
-    // 2. Prepend transaction to history
-    setTransactions((prev) => [newTransaction, ...prev]);
+    // Prepend transaction to history
+    setTransactions((prev) => {
+      const updated = [newTransaction, ...prev];
+      updateMonthlyChart(updated);
+      return updated;
+    });
 
-    // 3. Update Chart
-    updateChartFromTransaction(input.type, input.amount);
-
-    // 4. Synchronize with Supabase if online and authenticated
+    // Synchronize with Supabase
     if (isConfigured && user) {
       try {
-        const { error: insertTxError } = await supabase
+        const { data: inserted, error: insertTxError } = await supabase
           .from("transactions")
           .insert({
             user_id: user.id,
@@ -341,47 +388,46 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             amount: input.amount,
             description: input.description || null,
             transaction_date: input.transaction_date.split("T")[0],
-          });
+          })
+          .select()
+          .single();
 
         if (insertTxError) {
           console.error("Supabase insert transaction error:", insertTxError);
-        } else {
-          const targetAccount = accounts.find((a) => a.id === input.account_id);
-          if (targetAccount) {
-            const current =
-              targetAccount.current_balance ?? targetAccount.balance ?? 0;
-            const updatedBalance =
-              input.type === "income"
-                ? current + input.amount
-                : current - input.amount;
-
-            await supabase
-              .from("accounts")
-              .update({
-                current_balance: updatedBalance,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", input.account_id);
-          }
+          return { success: false, error: insertTxError.message };
         }
-      } catch (err) {
+
+        // Update real balance in accounts table
+        const targetAccount = accounts.find((a) => a.id === input.account_id);
+        if (targetAccount) {
+          const current = targetAccount.current_balance ?? targetAccount.balance ?? 0;
+          const updatedBalance =
+            input.type === "income" ? current + input.amount : current - input.amount;
+
+          await supabase
+            .from("accounts")
+            .update({
+              current_balance: updatedBalance,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", input.account_id);
+        }
+      } catch (err: any) {
         console.error("Failed to sync transaction to Supabase:", err);
+        return { success: false, error: err.message };
       }
     }
 
     return { success: true };
   };
 
-  // Money Transfer Handler: Decreases source and increases destination
+  // Money Transfer Handler
   const transferMoney = async (
     input: TransferInput
   ): Promise<{ success: boolean; error?: string }> => {
-    // Validation 1: Zero / negative amount
     if (!input.amount || input.amount <= 0) {
       return { success: false, error: "Transfer amount must be greater than zero." };
     }
-
-    // Validation 2: Same source and destination
     if (!input.fromAccountId || !input.toAccountId) {
       return { success: false, error: "Please select both source and destination accounts." };
     }
@@ -392,7 +438,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       };
     }
 
-    // Validation 3: Transfer greater than available balance
     const sourceAccount = accounts.find((a) => a.id === input.fromAccountId);
     const destAccount = accounts.find((a) => a.id === input.toAccountId);
 
@@ -443,8 +488,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       date: input.transactionDate.split("T")[0],
     };
 
-    // 1. Optimistic Local State Update:
-    // Decrement source by amount, increment destination by amount
+    // Optimistic balance shift: Decrement source, increment destination
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
         if (acc.id === input.fromAccountId) {
@@ -461,13 +505,10 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
-    // 2. Prepend to transaction history
+    // Prepend to transaction history
     setTransactions((prev) => [newTransferTransaction, ...prev]);
 
-    // Notice: We deliberately DO NOT call updateChartFromTransaction because
-    // transfers must not affect spending charts, total income, or total expenses.
-
-    // 3. Synchronize with Supabase if online
+    // Synchronize with Supabase
     if (isConfigured && user) {
       try {
         const { error: insertTxError } = await supabase
@@ -485,30 +526,31 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
 
         if (insertTxError) {
           console.error("Supabase transfer insert error:", insertTxError);
-        } else {
-          // Update both source and destination account balances in Supabase
-          const newSourceBal = (sourceAccount.current_balance ?? sourceAccount.balance ?? 0) - input.amount;
-          const newDestBal = (destAccount.current_balance ?? destAccount.balance ?? 0) + input.amount;
-
-          await Promise.all([
-            supabase
-              .from("accounts")
-              .update({
-                current_balance: newSourceBal,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", input.fromAccountId),
-            supabase
-              .from("accounts")
-              .update({
-                current_balance: newDestBal,
-                updated_at: new Date().toISOString(),
-              })
-              .eq("id", input.toAccountId),
-          ]);
+          return { success: false, error: insertTxError.message };
         }
-      } catch (err) {
+
+        const newSourceBal = (sourceAccount.current_balance ?? sourceAccount.balance ?? 0) - input.amount;
+        const newDestBal = (destAccount.current_balance ?? destAccount.balance ?? 0) + input.amount;
+
+        await Promise.all([
+          supabase
+            .from("accounts")
+            .update({
+              current_balance: newSourceBal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", input.fromAccountId),
+          supabase
+            .from("accounts")
+            .update({
+              current_balance: newDestBal,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", input.toAccountId),
+        ]);
+      } catch (err: any) {
         console.error("Failed to sync transfer to Supabase:", err);
+        return { success: false, error: err.message };
       }
     }
 
@@ -526,6 +568,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         chartData,
         metrics,
         isLoading,
+        loadError,
         addTransaction,
         transferMoney,
         refreshData: loadSupabaseData,

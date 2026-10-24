@@ -13,6 +13,9 @@ import {
   MinusCircle,
   ArrowRightLeft,
   ArrowUpRight,
+  Receipt,
+  Plus,
+  RefreshCw,
 } from "lucide-react";
 import { AppShell } from "@/components/layout/app-shell";
 import { BalanceCard } from "@/components/dashboard/balance-card";
@@ -23,13 +26,24 @@ import { ReceivedSpentChart } from "@/components/dashboard/received-spent-chart"
 import { SavingsGoalsList } from "@/components/dashboard/savings-goals-list";
 import { AddTransactionModal } from "@/components/dashboard/add-transaction-modal";
 import { TransferModal } from "@/components/dashboard/transfer-modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { LoadingState, Skeleton } from "@/components/ui/loading-state";
+import { ErrorState } from "@/components/ui/error-state";
 import { useFinance } from "@/contexts/finance-context";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
 import { TransactionType } from "@/types/finance";
 
 export default function DashboardPage() {
-  const { metrics, transactions, savingsGoals, chartData } = useFinance();
+  const {
+    metrics,
+    transactions,
+    savingsGoals,
+    chartData,
+    isLoading,
+    loadError,
+    refreshData,
+  } = useFinance();
   const { profile } = useAuth();
 
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -47,10 +61,59 @@ export default function DashboardPage() {
     setTimeout(() => setNotification(null), 4500);
   };
 
+  // Full page loading state for initial fetch
+  if (isLoading && transactions.length === 0) {
+    return (
+      <AppShell
+        title="Financial Dashboard"
+        subtitle="Loading your real-time accounts and live balances from Supabase..."
+      >
+        <div className="space-y-6 animate-in fade-in">
+          {/* Skeleton Metrics */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="h-32 rounded-xl bg-white p-6 border border-slate-200">
+                <Skeleton className="h-4 w-28 mb-3" />
+                <Skeleton className="h-8 w-36 mb-2" />
+                <Skeleton className="h-3 w-44" />
+              </div>
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 h-72 rounded-xl bg-white border border-slate-200 p-6">
+              <Skeleton className="h-6 w-40 mb-4" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+            <div className="h-72 rounded-xl bg-white border border-slate-200 p-6">
+              <Skeleton className="h-6 w-32 mb-4" />
+              <Skeleton className="h-48 w-full" />
+            </div>
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Error state if database queries fail
+  if (loadError && transactions.length === 0) {
+    return (
+      <AppShell
+        title="Financial Dashboard"
+        subtitle="Unable to retrieve financial data from Supabase."
+      >
+        <ErrorState
+          title="Failed to Load Financial Records"
+          message={loadError}
+          onRetry={refreshData}
+        />
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell
       title="Financial Dashboard"
-      subtitle={`Welcome back, ${profile?.fullName || "Student"}. Here is your live college budget snapshot in INR.`}
+      subtitle={`Welcome back, ${profile?.fullName || "Student"}. Here is your live college budget snapshot calculated from real transaction data in INR.`}
     >
       {/* Toast Notification Banner */}
       {notification && (
@@ -65,13 +128,13 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 6 Key Financial Metrics Grid (in INR) */}
+      {/* 6 Key Financial Metrics Grid (Calculated from Real Transaction Data in INR) */}
       <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-8">
         <BalanceCard
           title="Total Balance"
           amount={metrics.totalBalance}
           icon={Wallet}
-          subtext="Across all connected accounts"
+          subtext="Net balance across all accounts"
           trend={{ value: "+8.4%", isPositive: true }}
           accentColor="blue"
         />
@@ -79,7 +142,7 @@ export default function DashboardPage() {
           title="Bank Balance"
           amount={metrics.bankBalance}
           icon={Building2}
-          subtext="Checking & student savings"
+          subtext="Checking & bank accounts"
           accentColor="purple"
         />
         <BalanceCard
@@ -93,7 +156,7 @@ export default function DashboardPage() {
           title="Total Income"
           amount={metrics.totalIncome}
           icon={TrendingUp}
-          subtext="Recorded income inflow"
+          subtext="Total earnings & allowances"
           trend={{ value: "+12.1%", isPositive: true }}
           accentColor="emerald"
         />
@@ -101,7 +164,7 @@ export default function DashboardPage() {
           title="Total Expenses"
           amount={metrics.totalExpenses}
           icon={TrendingDown}
-          subtext="Spent this period"
+          subtext="Total spending & purchases"
           trend={{ value: "-4.3%", isPositive: true }}
           accentColor="rose"
         />
@@ -109,17 +172,29 @@ export default function DashboardPage() {
           title="Savings"
           amount={metrics.savingsTotal}
           icon={PiggyBank}
-          subtext="Allocated in reserve funds"
+          subtext="Dedicated savings accounts"
           trend={{ value: "+15.0%", isPositive: true }}
           accentColor="blue"
         />
       </section>
 
-      {/* Quick Actions Panel: Add Income, Add Expense, Transfer Money */}
+      {/* Quick Actions Panel: Add Income, Add Expense, Transfer */}
       <section className="mb-8">
-        <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
-          Quick Actions
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
+            Quick Actions
+          </h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refreshData()}
+            className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-800"
+            title="Refresh database records"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Sync
+          </Button>
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
           <QuickActionButton
             label="Add Income"
@@ -136,7 +211,7 @@ export default function DashboardPage() {
             onClick={() => openAddModal("expense")}
           />
           <QuickActionButton
-            label="Transfer Money"
+            label="Transfer"
             description="Move funds between bank and cash wallet"
             icon={ArrowRightLeft}
             variant="transfer"
@@ -151,7 +226,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-2">
           <DashboardCard
             title="Received vs Spent"
-            description="Visual monthly flow breakdown in Indian Rupees (INR)"
+            description="Live monthly flow breakdown from real transactions (Transfers excluded)"
             action={
               <Link href="/reports">
                 <Button variant="ghost" size="sm" className="gap-1 text-xs">
@@ -177,16 +252,26 @@ export default function DashboardPage() {
               </Link>
             }
           >
-            <SavingsGoalsList goals={savingsGoals} />
+            {savingsGoals.length === 0 ? (
+              <EmptyState
+                icon={PiggyBank}
+                title="No savings goals yet"
+                description="Set a target for tech upgrades, semester projects, or travel funds."
+                actionLabel="Create Goal"
+                onAction={() => window.location.assign("/savings")}
+              />
+            ) : (
+              <SavingsGoalsList goals={savingsGoals} />
+            )}
           </DashboardCard>
         </div>
       </section>
 
-      {/* Recent Transactions Section */}
+      {/* Recent Transactions Section: Date, Category, Description, Account, Amount, Income/Expense Indicator */}
       <section>
         <DashboardCard
-          title="Recent Activity & Transfers"
-          description="Your latest recorded college income, expenses, and inter-account transfers"
+          title="Recent Transactions"
+          description="Latest recorded income, expenses, and inter-account transfers"
           action={
             <Link href="/transactions">
               <Button variant="outline" size="sm" className="gap-1 text-xs">
@@ -196,9 +281,19 @@ export default function DashboardPage() {
           }
           contentClassName="p-2 sm:p-4 divide-y divide-slate-100"
         >
-          {transactions.slice(0, 6).map((tx) => (
-            <TransactionItem key={tx.id} transaction={tx} />
-          ))}
+          {transactions.length === 0 ? (
+            <EmptyState
+              icon={Receipt}
+              title="No transactions recorded yet"
+              description="Start managing your student finances by logging your first income or expense."
+              actionLabel="Add Transaction"
+              onAction={() => openAddModal("expense")}
+            />
+          ) : (
+            transactions.slice(0, 6).map((tx) => (
+              <TransactionItem key={tx.id} transaction={tx} />
+            ))
+          )}
         </DashboardCard>
       </section>
 
