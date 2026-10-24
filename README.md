@@ -1,36 +1,92 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# My Finance — Student Financial Management Application
 
-## Getting Started
+A full-stack personal finance web application built for college students to track accounts, manage daily income and expenses in Indian Rupees (₹ - INR), transfer funds without skewing cashflow, and allocate savings toward disciplined goals.
 
-First, run the development server:
+Built with **Next.js 16 (App Router & Turbopack)**, **Tailwind CSS**, **Recharts**, and **Supabase (PostgreSQL with Row Level Security)**.
 
+---
+
+## Recommended Application Workflow
+
+Follow this step-by-step workflow to get the most out of **My Finance**:
+
+### 1. Step 1: Set Up Accounts & Wallets (`/accounts`)
+> **Crucial First Step**: Every income, expense, and transfer requires an account to deposit into or deduct from.
+- Navigate to **Accounts & Wallets**.
+- Click **Add Account**.
+- Create your primary accounts:
+  - **Student Bank Account** (e.g., checking account with an opening balance like ₹5,000).
+  - **Cash in Hand** (e.g., physical wallet cash like ₹1,000).
+- Supports additional account types: *Savings*, *Campus Meal / Digital Wallet*, and *Student Credit Card*.
+
+### 2. Step 2: Record Daily Transactions (`/dashboard` & `/transactions`)
+- **Add Income**: Log your monthly home allowance, internship stipend, scholarship, or part-time earnings directly into your Bank account.
+- **Add Expense**: Log meals, travel, lab component purchases, or mobile recharges.
+- **Inter-Account Transfers**: Move money between accounts (e.g., ATM withdrawals: `Bank → Cash in Hand`).
+  - *Accounting Rule*: Transfers are neutral fund movements—they update account balances without inflating total income or expenses.
+- **Auto-Date & Time**: Uses current timestamp with manual override support for entering older transactions.
+
+### 3. Step 3: Set and Fund Savings Goals (`/savings`)
+- Create dedicated goal reserves (e.g., *Laptop* — ₹60,000, *Travel* — ₹15,000, *Emergency Fund* — ₹20,000).
+- Click **Add Contribution** to allocate money toward goals.
+- *Strict Rule*: Savings contributions represent asset reallocations and are never treated as expenses.
+- Track progress with dynamic completion bars, percentages, and contribution history.
+
+### 4. Step 4: Audit History & Filter Records (`/transactions`)
+- **Fast In-Memory Search**: Search by description (e.g., `"project"` matches *"Bought project components"*, *"Project printing"*, etc.), category, or amount.
+- **Filter**: Filter by date (single-day calendar or custom range), type (`Income`, `Expense`, `Transfer`), account, and category.
+- **Snapshot Metrics**: View daily net cashflow change and separate transfer totals.
+
+### 5. Step 5: Review Analytics & Spending Insights (`/dashboard` & `/reports`)
+- **Received vs Spent**: Interactive Recharts comparison bar chart with Daily, Weekly, Monthly, and Yearly filters.
+- Real-time balances and savings metrics automatically computed from verified transaction records.
+
+---
+
+## Getting Started Locally
+
+### 1. Prerequisites
+- Node.js 18.18+ or 20+
+- A Supabase project with the schema from `supabase/schema.sql` applied.
+
+### 2. Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Configure Environment Variables
+Create a `.env.local` file in the root directory:
+```env
+NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-publishable-key
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 4. Run Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Production Build & Quality Checks
 
-To learn more about Next.js, take a look at the following resources:
+Run the production build:
+```bash
+npm run build
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Run ESLint:
+```bash
+npm run lint
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## Deployment to Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+1. Import this repository in [Vercel](https://vercel.com/new).
+2. Add the environment variables:
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+3. Deploy!
