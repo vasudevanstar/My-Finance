@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/auth-context";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { AppLogo } from "@/components/ui/app-logo";
 import { AlertCircle, Mail, ArrowLeft, Loader2, CheckCircle2 } from "lucide-react";
 
 export default function ForgotPasswordPage() {
@@ -42,10 +43,8 @@ export default function ForgotPasswordPage() {
     <div className="min-h-screen flex flex-col justify-center items-center p-4 bg-slate-50/70">
       {/* Brand Header */}
       <div className="flex flex-col items-center mb-8 text-center">
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white font-bold text-lg shadow-md shadow-blue-500/20 mb-3">
-          MF
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <AppLogo size="xl" className="mb-3" />
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 mt-2">
           Reset Your Password
         </h1>
         <p className="text-sm text-slate-500 mt-1 max-w-sm">

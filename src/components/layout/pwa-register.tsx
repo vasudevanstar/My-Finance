@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Download, X, Share } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AppLogo } from "@/components/ui/app-logo";
 
 export function PwaRegister() {
   const [deferredPrompt, setDeferredPrompt] = React.useState<any>(null);
@@ -71,9 +72,7 @@ export function PwaRegister() {
     <div className="fixed bottom-20 md:bottom-6 left-4 right-4 md:left-auto md:right-6 md:max-w-sm z-50 rounded-2xl border border-blue-200 bg-white p-4 shadow-xl shadow-slate-900/10 animate-in fade-in slide-in-from-bottom-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white font-bold text-sm shadow-sm">
-            MF
-          </div>
+          <AppLogo size="md" />
           <div>
             <h4 className="text-sm font-bold text-slate-900 leading-tight">
               Install My Finance

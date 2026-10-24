@@ -12,6 +12,7 @@ import {
   Settings,
   Sparkles,
 } from "lucide-react";
+import { AppLogo } from "@/components/ui/app-logo";
 import { cn } from "@/lib/utils";
 
 export const navigationItems = [
@@ -61,18 +62,8 @@ export function AppSidebar({ className }: AppSidebarProps) {
         className
       )}
     >
-      <div className="flex h-16 shrink-0 items-center gap-2.5 px-6 border-b border-slate-100">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white font-bold shadow-sm shadow-blue-500/20">
-          MF
-        </div>
-        <div className="flex flex-col">
-          <span className="font-bold text-base tracking-tight text-slate-900 leading-none">
-            My Finance
-          </span>
-          <span className="text-[11px] font-medium text-slate-400 mt-1">
-            Student Edition
-          </span>
-        </div>
+      <div className="flex h-16 shrink-0 items-center px-6 border-b border-slate-100">
+        <AppLogo size="md" withText subtitle="Student Edition" />
       </div>
 
       {/* Navigation Links */}

@@ -21,6 +21,7 @@ import {
   DropdownSeparator,
 } from "@/components/ui/dropdown-menu";
 import { navigationItems } from "./app-sidebar";
+import { AppLogo } from "@/components/ui/app-logo";
 import { useAuth } from "@/contexts/auth-context";
 import { cn } from "@/lib/utils";
 
@@ -150,14 +151,7 @@ export function AppHeader({ title, subtitle }: AppHeaderProps) {
           />
           <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-xl flex flex-col p-4 animate-in slide-in-from-left duration-200">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white font-bold text-xs">
-                  MF
-                </div>
-                <span className="font-bold text-slate-900 text-sm">
-                  My Finance
-                </span>
-              </div>
+              <AppLogo size="sm" withText />
               <Button
                 variant="ghost"
                 size="icon"
