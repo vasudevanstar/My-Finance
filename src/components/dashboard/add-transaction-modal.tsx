@@ -83,6 +83,7 @@ export function AddTransactionModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return; // Prevent duplicate transaction creation from rapid clicks
     setErrorMessage(null);
 
     const numericAmount = parseFloat(amount);

@@ -74,6 +74,7 @@ export function TransferModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return; // Prevent duplicate transfer execution from rapid clicks
     setErrorMessage(null);
 
     const numericAmount = parseFloat(amount);

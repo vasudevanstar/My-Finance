@@ -94,6 +94,16 @@ interface FinanceContextType {
   addSavingsContribution: (
     input: AddContributionInput
   ) => Promise<{ success: boolean; error?: string }>;
+  updateTransaction: (
+    id: string,
+    input: Partial<AddTransactionInput>
+  ) => Promise<{ success: boolean; error?: string }>;
+  deleteTransaction: (
+    id: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  deleteAccount: (
+    id: string
+  ) => Promise<{ success: boolean; error?: string }>;
   refreshData: () => Promise<void>;
 }
 
@@ -860,6 +870,200 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     return { success: true };
   };
 
+  // Edit / Update Transaction Handler
+  const updateTransaction = async (
+    id: string,
+    input: Partial<AddTransactionInput>
+  ): Promise<{ success: boolean; error?: string }> => {
+    const existing = transactions.find((t) => t.id === id);
+    if (!existing) {
+      return { success: false, error: "Transaction not found." };
+    }
+
+    if (input.amount !== undefined && input.amount <= 0) {
+      return { success: false, error: "Amount must be strictly greater than zero." };
+    }
+
+    const updatedTx: Transaction = {
+      ...existing,
+      amount: input.amount ?? existing.amount,
+      description: input.description ?? existing.description,
+      title: input.description ?? existing.title,
+      category_id: input.category_id ?? existing.category_id,
+      category_name: input.category_name ?? existing.category_name,
+      category: input.category_name ?? existing.category,
+      account_id: input.account_id ?? existing.account_id,
+      account_name: input.account_name ?? existing.account_name,
+      account: input.account_name ?? existing.account,
+      transaction_date: input.transaction_date ?? existing.transaction_date,
+      date: (input.transaction_date ?? existing.transaction_date).split("T")[0],
+    };
+
+    setTransactions((prev) => {
+      const nextList = prev.map((t) => (t.id === id ? updatedTx : t));
+      updateMonthlyChart(nextList);
+      return nextList;
+    });
+
+    if (isConfigured && user) {
+      try {
+        const updatePayload: any = { updated_at: new Date().toISOString() };
+        if (input.amount !== undefined) updatePayload.amount = input.amount;
+        if (input.description !== undefined) updatePayload.description = input.description;
+        if (input.category_id) updatePayload.category_id = input.category_id;
+        if (input.account_id) updatePayload.account_id = input.account_id;
+        if (input.transaction_date) updatePayload.transaction_date = input.transaction_date.split("T")[0];
+
+        const { error } = await supabase
+          .from("transactions")
+          .update(updatePayload)
+          .eq("id", id)
+          .eq("user_id", user.id); // Strict ownership check
+
+        if (error) return { success: false, error: error.message };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    return { success: true };
+  };
+
+  // Delete Transaction Handler (Restores account balances accurately)
+  const deleteTransaction = async (
+    id: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const target = transactions.find((t) => t.id === id);
+    if (!target) {
+      return { success: false, error: "Transaction not found." };
+    }
+
+    // Revert account balances
+    if (target.type === "income" && target.account_id) {
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === target.account_id
+            ? { ...a, current_balance: (a.current_balance ?? a.balance ?? 0) - target.amount }
+            : a
+        )
+      );
+    } else if (target.type === "expense" && target.account_id) {
+      setAccounts((prev) =>
+        prev.map((a) =>
+          a.id === target.account_id
+            ? { ...a, current_balance: (a.current_balance ?? a.balance ?? 0) + target.amount }
+            : a
+        )
+      );
+    } else if (target.type === "transfer") {
+      setAccounts((prev) =>
+        prev.map((a) => {
+          if (a.id === target.source_account_id) {
+            return { ...a, current_balance: (a.current_balance ?? a.balance ?? 0) + target.amount };
+          }
+          if (a.id === target.destination_account_id) {
+            return { ...a, current_balance: (a.current_balance ?? a.balance ?? 0) - target.amount };
+          }
+          return a;
+        })
+      );
+    }
+
+    setTransactions((prev) => {
+      const nextList = prev.filter((t) => t.id !== id);
+      updateMonthlyChart(nextList);
+      return nextList;
+    });
+
+    if (isConfigured && user) {
+      try {
+        const { error } = await supabase
+          .from("transactions")
+          .delete()
+          .eq("id", id)
+          .eq("user_id", user.id); // Strict ownership check
+
+        if (error) return { success: false, error: error.message };
+
+        // Also update accounts in database if online
+        if (target.type === "income" && target.account_id) {
+          const acc = accounts.find((a) => a.id === target.account_id);
+          if (acc) {
+            await supabase
+              .from("accounts")
+              .update({ current_balance: (acc.current_balance ?? 0) - target.amount })
+              .eq("id", target.account_id)
+              .eq("user_id", user.id);
+          }
+        } else if (target.type === "expense" && target.account_id) {
+          const acc = accounts.find((a) => a.id === target.account_id);
+          if (acc) {
+            await supabase
+              .from("accounts")
+              .update({ current_balance: (acc.current_balance ?? 0) + target.amount })
+              .eq("id", target.account_id)
+              .eq("user_id", user.id);
+          }
+        } else if (target.type === "transfer") {
+          const src = accounts.find((a) => a.id === target.source_account_id);
+          const dst = accounts.find((a) => a.id === target.destination_account_id);
+          if (src && target.source_account_id) {
+            await supabase
+              .from("accounts")
+              .update({ current_balance: (src.current_balance ?? 0) + target.amount })
+              .eq("id", target.source_account_id)
+              .eq("user_id", user.id);
+          }
+          if (dst && target.destination_account_id) {
+            await supabase
+              .from("accounts")
+              .update({ current_balance: (dst.current_balance ?? 0) - target.amount })
+              .eq("id", target.destination_account_id)
+              .eq("user_id", user.id);
+          }
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    return { success: true };
+  };
+
+  // Delete Account Handler (Validates account ownership and safely cascades)
+  const deleteAccount = async (
+    id: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    const targetAccount = accounts.find((a) => a.id === id);
+    if (!targetAccount) {
+      return { success: false, error: "Account not found." };
+    }
+
+    setAccounts((prev) => prev.filter((a) => a.id !== id));
+    // Cleanly dissociate transactions connected to this deleted account
+    setTransactions((prev) =>
+      prev.map((t) =>
+        t.account_id === id ? { ...t, account_id: undefined, account_name: "Deleted Account" } : t
+      )
+    );
+
+    if (isConfigured && user) {
+      try {
+        const { error } = await supabase
+          .from("accounts")
+          .delete()
+          .eq("id", id)
+          .eq("user_id", user.id); // Strict ownership check
+
+        if (error) return { success: false, error: error.message };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    return { success: true };
+  };
+
   return (
     <FinanceContext.Provider
       value={{
@@ -878,6 +1082,9 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         updateSavingsGoal,
         deleteSavingsGoal,
         addSavingsContribution,
+        updateTransaction,
+        deleteTransaction,
+        deleteAccount,
         refreshData: loadSupabaseData,
       }}
     >
