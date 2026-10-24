@@ -82,14 +82,14 @@ export function TransactionItem({
     <div
       onClick={() => onClick?.(transaction)}
       className={cn(
-        "flex items-center justify-between p-3.5 sm:p-4 rounded-xl transition-colors hover:bg-slate-50 border border-transparent hover:border-slate-100 cursor-pointer",
+        "flex items-center justify-between p-3 sm:p-4 rounded-xl transition-colors hover:bg-slate-50 border border-transparent hover:border-slate-100 cursor-pointer min-h-[56px] active:bg-slate-100/70",
         className
       )}
     >
-      <div className="flex items-center gap-3.5 min-w-0">
+      <div className="flex items-center gap-2.5 sm:gap-3.5 min-w-0">
         <div
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border",
+            "flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl border",
             isIncome
               ? "bg-emerald-50 text-emerald-600 border-emerald-100"
               : isTransfer
@@ -97,21 +97,21 @@ export function TransactionItem({
               : "bg-slate-100 text-slate-600 border-slate-200"
           )}
         >
-          <CategoryIcon className="h-5 w-5" />
+          <CategoryIcon className="h-4 w-4 sm:h-5 sm:w-5" />
         </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-sm font-medium text-slate-900 truncate">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <p className="text-xs sm:text-sm font-semibold text-slate-900 truncate max-w-[160px] sm:max-w-xs">
               {displayTitle}
             </p>
             {isTransfer && (
-              <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+              <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
                 Transfer
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
+          <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-500 mt-0.5">
             <span className="truncate">{catName}</span>
             <span>•</span>
             <span className="truncate">{accName}</span>
@@ -119,10 +119,10 @@ export function TransactionItem({
         </div>
       </div>
 
-      <div className="text-right shrink-0 ml-3">
+      <div className="text-right shrink-0 ml-2 sm:ml-3">
         <p
           className={cn(
-            "text-sm font-semibold",
+            "text-xs sm:text-sm font-bold",
             isIncome
               ? "text-emerald-600"
               : isTransfer
@@ -133,7 +133,7 @@ export function TransactionItem({
           {isIncome ? "+" : isTransfer ? "⇄ " : "-"}
           {formatCurrency(transaction.amount)}
         </p>
-        <p className="text-xs text-slate-400 mt-0.5" title="User local time">
+        <p className="text-[10px] sm:text-xs text-slate-400 mt-0.5" title="User local time">
           {formattedDateTime}
         </p>
       </div>

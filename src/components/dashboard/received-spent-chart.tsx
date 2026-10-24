@@ -173,22 +173,26 @@ export function ReceivedSpentChart({ transactions = [] }: ReceivedSpentChartProp
   return (
     <div className="w-full flex flex-col">
       {/* Top Filter Bar: Timeframe Buttons & Date Range Selector */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 mb-4 border-b border-slate-100">
-        <div>
-          <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
-            Cashflow Comparison
-          </span>
-          <div className="flex items-baseline gap-3 mt-1">
-            <h3 className="text-base font-bold text-slate-900">Received vs Spent</h3>
-            <span className="text-xs text-slate-500 hidden sm:inline">
-              Received: <strong className="text-emerald-600">{formatCurrency(totalReceived)}</strong> | Spent:{" "}
-              <strong className="text-rose-600">{formatCurrency(totalSpent)}</strong>
+      <div className="flex flex-col gap-3 pb-4 mb-3 border-b border-slate-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider block">
+              Cashflow Comparison
             </span>
+            <div className="flex items-baseline gap-2 mt-0.5">
+              <h3 className="text-sm sm:text-base font-bold text-slate-900">Received vs Spent</h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-xs text-slate-500">
+            <span>In: <strong className="text-emerald-600 font-bold">{formatCurrency(totalReceived)}</strong></span>
+            <span>•</span>
+            <span>Out: <strong className="text-rose-600 font-bold">{formatCurrency(totalSpent)}</strong></span>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 justify-between sm:justify-start">
           {/* Timeframe Buttons: Daily, Weekly, Monthly (Default), Yearly */}
           <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5">
             {(["daily", "weekly", "monthly", "yearly"] as AnalyticsTimeframe[]).map((tf) => (
@@ -196,7 +200,7 @@ export function ReceivedSpentChart({ transactions = [] }: ReceivedSpentChartProp
                 key={tf}
                 type="button"
                 onClick={() => setTimeframe(tf)}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-md capitalize transition-all cursor-pointer ${
+                className={`px-2 sm:px-2.5 py-1 text-xs font-semibold rounded-md capitalize transition-all cursor-pointer ${
                   timeframe === tf
                     ? "bg-white text-blue-700 shadow-xs"
                     : "text-slate-600 hover:text-slate-900"
@@ -208,21 +212,23 @@ export function ReceivedSpentChart({ transactions = [] }: ReceivedSpentChartProp
           </div>
 
           {/* Date Range Inputs */}
-          <div className="flex items-center gap-1.5 text-xs text-slate-600">
-            <Calendar className="h-3.5 w-3.5 text-slate-400" />
-            <input
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="h-8 px-2 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
-              title="Start Date"
-            />
-            <span className="text-slate-400">to</span>
+          <div className="flex items-center gap-1.5 text-xs text-slate-600 flex-wrap">
+            <div className="flex items-center gap-1">
+              <Calendar className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                className="h-7 sm:h-8 px-1.5 sm:px-2 rounded-md border border-slate-200 bg-white text-[11px] sm:text-xs text-slate-700 max-w-[125px]"
+                title="Start Date"
+              />
+            </div>
+            <span className="text-slate-400 text-xs">to</span>
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="h-8 px-2 rounded-md border border-slate-200 bg-white text-xs text-slate-700"
+              className="h-7 sm:h-8 px-1.5 sm:px-2 rounded-md border border-slate-200 bg-white text-[11px] sm:text-xs text-slate-700 max-w-[125px]"
               title="End Date"
             />
             {(startDate || endDate) && (
@@ -231,7 +237,7 @@ export function ReceivedSpentChart({ transactions = [] }: ReceivedSpentChartProp
                   setStartDate("");
                   setEndDate("");
                 }}
-                className="text-xs text-blue-600 hover:underline px-1"
+                className="text-xs text-blue-600 hover:underline px-1 cursor-pointer font-medium"
               >
                 Reset
               </button>

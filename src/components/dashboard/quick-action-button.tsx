@@ -41,25 +41,25 @@ export function QuickActionButton({
     <button
       onClick={onClick}
       className={cn(
-        "group flex w-full items-center gap-3.5 rounded-xl border border-slate-200/90 bg-white p-3.5 sm:p-4 text-left transition-all hover:shadow-sm cursor-pointer",
+        "group flex w-full flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-2 sm:gap-3.5 rounded-xl border border-slate-200/90 bg-white p-3 sm:p-4 transition-all hover:shadow-sm cursor-pointer min-h-[52px] sm:min-h-[64px] active:scale-[0.98]",
         current.bg,
         className
       )}
     >
       <div
         className={cn(
-          "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border transition-transform group-hover:scale-105",
+          "flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl border transition-transform group-hover:scale-105",
           current.iconBox
         )}
       >
-        <Icon className="h-5 w-5" />
+        <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
       </div>
       <div className="flex-1 min-w-0">
-        <span className="block text-sm font-semibold text-slate-900 group-hover:text-slate-950">
+        <span className="block text-xs sm:text-sm font-bold text-slate-900 group-hover:text-slate-950">
           {label}
         </span>
         {description && (
-          <span className="block text-xs text-slate-500 truncate mt-0.5">
+          <span className="hidden sm:block text-xs text-slate-500 truncate mt-0.5">
             {description}
           </span>
         )}

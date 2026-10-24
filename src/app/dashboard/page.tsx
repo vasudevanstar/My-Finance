@@ -128,8 +128,52 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 6 Key Financial Metrics Grid (Calculated from Real Transaction Data in INR) */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 mb-8">
+      {/* Mobile Priority 1 & 2: Prominent Total Balance & Instant Quick Action Buttons */}
+      <section className="mb-6">
+        {/* Quick Actions Panel: Add Income, Add Expense, Transfer - Super accessible on mobile and desktop */}
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wider">
+            Quick Actions
+          </h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refreshData()}
+            className="h-8 text-xs gap-1 text-slate-500 hover:text-slate-800"
+            title="Refresh database records"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Sync</span>
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2.5 sm:gap-3.5 mb-6">
+          <QuickActionButton
+            label="Income"
+            description="Log allowance or stipend"
+            icon={PlusCircle}
+            variant="income"
+            onClick={() => openAddModal("income")}
+          />
+          <QuickActionButton
+            label="Expense"
+            description="Log meals or shopping"
+            icon={MinusCircle}
+            variant="expense"
+            onClick={() => openAddModal("expense")}
+          />
+          <QuickActionButton
+            label="Transfer"
+            description="Between bank & cash"
+            icon={ArrowRightLeft}
+            variant="transfer"
+            onClick={() => setTransferModalOpen(true)}
+          />
+        </div>
+      </section>
+
+      {/* 6 Key Financial Metrics Grid (Responsive 1-col on mobile, 2-col on tablet, 3-col on desktop) */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-5 mb-8">
         <BalanceCard
           title="Total Balance"
           amount={metrics.totalBalance}
@@ -137,6 +181,7 @@ export default function DashboardPage() {
           subtext="Net balance across all accounts"
           trend={{ value: "+8.4%", isPositive: true }}
           accentColor="blue"
+          className="border-blue-200/80 bg-gradient-to-br from-white to-blue-50/20 shadow-xs"
         />
         <BalanceCard
           title="Bank Balance"
@@ -176,48 +221,6 @@ export default function DashboardPage() {
           trend={{ value: "+15.0%", isPositive: true }}
           accentColor="blue"
         />
-      </section>
-
-      {/* Quick Actions Panel: Add Income, Add Expense, Transfer */}
-      <section className="mb-8">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider">
-            Quick Actions
-          </h2>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refreshData()}
-            className="h-7 text-xs gap-1 text-slate-500 hover:text-slate-800"
-            title="Refresh database records"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-            Sync
-          </Button>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
-          <QuickActionButton
-            label="Add Income"
-            description="Log allowance from home, part-time, or stipend"
-            icon={PlusCircle}
-            variant="income"
-            onClick={() => openAddModal("income")}
-          />
-          <QuickActionButton
-            label="Add Expense"
-            description="Log meals, travel, education books, or shopping"
-            icon={MinusCircle}
-            variant="expense"
-            onClick={() => openAddModal("expense")}
-          />
-          <QuickActionButton
-            label="Transfer"
-            description="Move funds between bank and cash wallet"
-            icon={ArrowRightLeft}
-            variant="transfer"
-            onClick={() => setTransferModalOpen(true)}
-          />
-        </div>
       </section>
 
       {/* Main Insights Grid: Dynamic Chart & Savings Goals */}
