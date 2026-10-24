@@ -13,6 +13,7 @@ import {
   Search,
   Plus,
   Filter,
+  FilterX,
   PlusCircle,
   MinusCircle,
   ArrowRightLeft,
@@ -24,16 +25,18 @@ import {
   TrendingDown,
   Layers,
   ArrowRight,
+  X,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useFinance } from "@/contexts/finance-context";
 import { TransactionType } from "@/types/finance";
 import { formatCurrency, formatFullDate, getISODateString } from "@/lib/utils";
 
 export default function TransactionsPage() {
-  const { transactions, categories, transfers } = useFinance();
+  const { transactions, categories, accounts } = useFinance();
 
-  // Mode: "single-day" vs "custom-range"
-  const [filterMode, setFilterMode] = React.useState<"single-day" | "custom-range">("single-day");
+  // Mode: "all-dates" vs "single-day" vs "custom-range"
+  const [filterMode, setFilterMode] = React.useState<"all-dates" | "single-day" | "custom-range">("all-dates");
 
   // Single date selector state (initialized in useEffect for stable client-side local timezone)
   const [selectedDate, setSelectedDate] = React.useState<string>("2026-10-24");
@@ -49,13 +52,20 @@ export default function TransactionsPage() {
   const [rangeStart, setRangeStart] = React.useState<string>("");
   const [rangeEnd, setRangeEnd] = React.useState<string>("");
 
-  // Search & Type filter
-  const [searchTerm, setSearchTerm] = React.useState("");
-  const [categoryFilter, setCategoryFilter] = React.useState("ALL");
-  const [typeFilter, setTypeFilter] = React.useState("ALL");
+  // Search input: Matches Description, Category, and Amount
+  const [searchQuery, setSearchQuery] = React.useState("");
 
-  // View tabs
-  const [activeTab, setActiveTab] = React.useState<"all" | "transfers">("all");
+  // Dedicated filters
+  const [typeFilter, setTypeFilter] = React.useState<string>("ALL");
+  const [accountFilter, setAccountFilter] = React.useState<string>("ALL");
+  const [categoryFilter, setCategoryFilter] = React.useState<string>("ALL");
+
+  // Amount range filters (optional min/max bounds)
+  const [minAmount, setMinAmount] = React.useState<string>("");
+  const [maxAmount, setMaxAmount] = React.useState<string>("");
+
+  // Collapsible advanced filters panel
+  const [showAdvancedFilters, setShowAdvancedFilters] = React.useState(false);
 
   // Modals
   const [modalOpen, setModalOpen] = React.useState(false);
@@ -90,29 +100,125 @@ export default function TransactionsPage() {
     setSelectedDate(getISODateString(new Date()));
   };
 
-  // Filter dataset by chosen date/range
-  const dateFilteredTransactions = React.useMemo(() => {
-    return transactions.filter((t) => {
-      const txDate = (t.transaction_date || t.date || "").split("T")[0];
+  // Clear all filters handler
+  const handleClearAllFilters = () => {
+    setSearchQuery("");
+    setTypeFilter("ALL");
+    setAccountFilter("ALL");
+    setCategoryFilter("ALL");
+    setMinAmount("");
+    setMaxAmount("");
+    setRangeStart("");
+    setRangeEnd("");
+    setFilterMode("all-dates");
+  };
+
+  // Determine if any filter is active
+  const hasActiveFilters =
+    searchQuery.trim() !== "" ||
+    typeFilter !== "ALL" ||
+    accountFilter !== "ALL" ||
+    categoryFilter !== "ALL" ||
+    minAmount !== "" ||
+    maxAmount !== "" ||
+    filterMode !== "all-dates";
+
+  // Fast In-Memory Filtering (O(N), avoids redundant database calls)
+  const filteredTransactions = React.useMemo(() => {
+    const cleanQuery = searchQuery.trim().toLowerCase();
+    const minVal = minAmount ? parseFloat(minAmount) : null;
+    const maxVal = maxAmount ? parseFloat(maxAmount) : null;
+
+    return transactions.filter((tx) => {
+      const txDate = (tx.transaction_date || tx.date || "").split("T")[0];
+
+      // 1. Date filter
       if (filterMode === "single-day") {
-        return txDate === selectedDate;
-      } else {
+        if (txDate !== selectedDate) return false;
+      } else if (filterMode === "custom-range") {
         if (rangeStart && txDate < rangeStart) return false;
         if (rangeEnd && txDate > rangeEnd) return false;
-        return true;
       }
-    });
-  }, [transactions, filterMode, selectedDate, rangeStart, rangeEnd]);
 
-  // Compute daily / range financial KPIs from filtered date records
-  // IMPORTANT: Transfers are computed separately and NOT counted in Income or Expenses!
-  const dailyKPIs = React.useMemo(() => {
+      // 2. Type filter (Income, Expense, Transfer)
+      if (typeFilter !== "ALL") {
+        if (tx.type !== typeFilter) return false;
+      }
+
+      // 3. Account filter
+      if (accountFilter !== "ALL") {
+        const matchesAccount =
+          tx.account_id === accountFilter ||
+          tx.source_account_id === accountFilter ||
+          tx.destination_account_id === accountFilter ||
+          tx.account_name === accountFilter ||
+          tx.account === accountFilter;
+        if (!matchesAccount) return false;
+      }
+
+      // 4. Category filter
+      if (categoryFilter !== "ALL") {
+        const cat = tx.category_name || tx.category || "";
+        if (cat !== categoryFilter) return false;
+      }
+
+      // 5. Amount range bounds
+      if (minVal !== null && !isNaN(minVal) && tx.amount < minVal) {
+        return false;
+      }
+      if (maxVal !== null && !isNaN(maxVal) && tx.amount > maxVal) {
+        return false;
+      }
+
+      // 6. Search query by:
+      // - Description (e.g., "project" matches "Bought project components", "Project printing", "Final year project")
+      // - Category (e.g., "Education", "Food")
+      // - Amount (e.g., "1450", "380", "1450.00")
+      if (cleanQuery) {
+        const descMatch = (tx.description || tx.title || "")
+          .toLowerCase()
+          .includes(cleanQuery);
+        const catMatch = (tx.category_name || tx.category || "")
+          .toLowerCase()
+          .includes(cleanQuery);
+        const accMatch = (tx.account_name || tx.account || "")
+          .toLowerCase()
+          .includes(cleanQuery);
+        const amountStr = String(tx.amount);
+        const amountFormatted = tx.amount.toLocaleString("en-IN");
+        const amountMatch =
+          amountStr.includes(cleanQuery) || amountFormatted.includes(cleanQuery);
+
+        if (!descMatch && !catMatch && !accMatch && !amountMatch) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [
+    transactions,
+    filterMode,
+    selectedDate,
+    rangeStart,
+    rangeEnd,
+    typeFilter,
+    accountFilter,
+    categoryFilter,
+    minAmount,
+    maxAmount,
+    searchQuery,
+  ]);
+
+  // Compute live KPIs strictly from the filtered transactions
+  // Transfers are counted separately and NOT mixed into income or expenses!
+  const summaryKPIs = React.useMemo(() => {
     let income = 0;
     let expenses = 0;
     let transfersSum = 0;
     let transfersCount = 0;
 
-    dateFilteredTransactions.forEach((t) => {
+    filteredTransactions.forEach((t) => {
       if (t.type === "income") {
         income += t.amount;
       } else if (t.type === "expense") {
@@ -123,7 +229,7 @@ export default function TransactionsPage() {
       }
     });
 
-    const netChange = income - expenses; // Strictly Income - Expense
+    const netChange = income - expenses;
 
     return {
       income,
@@ -132,50 +238,26 @@ export default function TransactionsPage() {
       transfersSum,
       transfersCount,
     };
-  }, [dateFilteredTransactions]);
+  }, [filteredTransactions]);
 
-  // Apply tab, category, type, and search filters on top of date filtered records
-  const finalDisplayTransactions = React.useMemo(() => {
-    return dateFilteredTransactions.filter((tx) => {
-      if (activeTab === "transfers" && tx.type !== "transfer") return false;
-
-      const titleMatch = (tx.title || tx.description || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
-      const categoryMatch = (tx.category_name || tx.category || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
-      const accountMatch = (tx.account_name || tx.account || "")
-        .toLowerCase()
-        .includes(searchTerm.toLowerCase());
-
-      const matchesSearch = titleMatch || categoryMatch || accountMatch;
-
-      const currentCat = tx.category_name || tx.category;
-      const matchesCategory =
-        categoryFilter === "ALL" || currentCat === categoryFilter;
-
-      const matchesType = typeFilter === "ALL" || tx.type === typeFilter;
-      return matchesSearch && matchesCategory && matchesType;
-    });
-  }, [dateFilteredTransactions, activeTab, searchTerm, categoryFilter, typeFilter]);
-
-  // Format header title
+  // Active Date Label
   const dateTitle =
-    filterMode === "single-day"
+    filterMode === "all-dates"
+      ? "All Time Records"
+      : filterMode === "single-day"
       ? formatFullDate(selectedDate)
       : rangeStart || rangeEnd
       ? `${rangeStart ? formatFullDate(rangeStart) : "Beginning"} — ${
           rangeEnd ? formatFullDate(rangeEnd) : "Present"
         }`
-      : "All Dates";
+      : "Custom Range";
 
   const isToday = selectedDate === todayDate;
 
   return (
     <AppShell
-      title="Transaction History"
-      subtitle="Calendar-driven daily financial audit, income, expenses, and transfer tracking in your local timezone."
+      title="Transaction History & Search"
+      subtitle="Fast in-memory search by description, category, or amount, with date ranges, accounts, and transfer filters."
     >
       {notification && (
         <div className="mb-6 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm font-medium text-emerald-800 flex items-center justify-between animate-in fade-in">
@@ -189,11 +271,48 @@ export default function TransactionsPage() {
         </div>
       )}
 
-      {/* 1. Date Selector Toolbar: Previous Day, Next Day, Today, and Custom Range */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-6 mb-6 shadow-xs">
+      {/* 1. Date Selector Toolbar */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 mb-5 shadow-xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-4">
-          {/* Day Navigation Controls */}
-          {filterMode === "single-day" ? (
+          {/* Mode Switcher Tabs */}
+          <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 self-start">
+            <button
+              type="button"
+              onClick={() => setFilterMode("all-dates")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                filterMode === "all-dates"
+                  ? "bg-white text-blue-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              All Dates
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterMode("single-day")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                filterMode === "single-day"
+                  ? "bg-white text-blue-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Single Date
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilterMode("custom-range")}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
+                filterMode === "custom-range"
+                  ? "bg-white text-blue-700 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Custom Date Range
+            </button>
+          </div>
+
+          {/* Date Controls for Active Mode */}
+          {filterMode === "single-day" && (
             <div className="flex items-center gap-2 flex-wrap">
               <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 p-1">
                 <Button
@@ -236,9 +355,11 @@ export default function TransactionsPage() {
                 Today
               </Button>
             </div>
-          ) : (
+          )}
+
+          {filterMode === "custom-range" && (
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold text-slate-600">Range:</span>
+              <span className="text-xs font-semibold text-slate-600">From:</span>
               <input
                 type="date"
                 value={rangeStart}
@@ -246,7 +367,7 @@ export default function TransactionsPage() {
                 className="h-9 px-2.5 rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-800 font-medium"
                 title="Start Date"
               />
-              <span className="text-slate-400 text-xs">to</span>
+              <span className="text-slate-400 text-xs">to:</span>
               <input
                 type="date"
                 value={rangeEnd}
@@ -264,143 +385,315 @@ export default function TransactionsPage() {
                   }}
                   className="h-8 text-xs text-slate-500 hover:text-slate-900"
                 >
-                  Reset
+                  Clear Dates
                 </Button>
               )}
             </div>
           )}
 
-          {/* Mode Switcher: Single Date vs Custom Range */}
-          <div className="flex items-center gap-2 self-start md:self-auto">
-            <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5">
-              <button
-                type="button"
-                onClick={() => setFilterMode("single-day")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                  filterMode === "single-day"
-                    ? "bg-white text-blue-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Single Date
-              </button>
-              <button
-                type="button"
-                onClick={() => setFilterMode("custom-range")}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                  filterMode === "custom-range"
-                    ? "bg-white text-blue-700 shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Custom Range
-              </button>
-            </div>
-          </div>
+          {filterMode === "all-dates" && (
+            <span className="text-xs font-medium text-slate-500">
+              Showing transactions across entire database history
+            </span>
+          )}
         </div>
 
-        {/* 2. Daily Summary Metric KPI Cards (Income, Expenses, Net Change, Transfers Separately) */}
+        {/* 2. Financial Snapshot KPI Cards */}
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-2.5">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-              {filterMode === "single-day" ? "Daily Financial Snapshot" : "Range Financial Snapshot"} • {dateTitle}
+              Financial Summary • {dateTitle} ({filteredTransactions.length} matching)
             </span>
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-            {/* Daily Income */}
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
-              <div className="flex items-center gap-1.5 text-emerald-700 text-xs font-semibold mb-1">
+            {/* Income */}
+            <div className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-3.5">
+              <div className="flex items-center gap-1.5 text-emerald-700 text-xs font-semibold mb-0.5">
                 <TrendingUp className="h-4 w-4" />
-                <span>Daily Income</span>
+                <span>Income</span>
               </div>
-              <p className="text-lg sm:text-2xl font-bold text-emerald-700">
-                +{formatCurrency(dailyKPIs.income)}
+              <p className="text-lg sm:text-xl font-bold text-emerald-700">
+                +{formatCurrency(summaryKPIs.income)}
               </p>
             </div>
 
-            {/* Daily Expenses */}
-            <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-4">
-              <div className="flex items-center gap-1.5 text-rose-700 text-xs font-semibold mb-1">
+            {/* Expenses */}
+            <div className="rounded-xl border border-rose-100 bg-rose-50/40 p-3.5">
+              <div className="flex items-center gap-1.5 text-rose-700 text-xs font-semibold mb-0.5">
                 <TrendingDown className="h-4 w-4" />
-                <span>Daily Expenses</span>
+                <span>Expenses</span>
               </div>
-              <p className="text-lg sm:text-2xl font-bold text-rose-700">
-                -{formatCurrency(dailyKPIs.expenses)}
+              <p className="text-lg sm:text-xl font-bold text-rose-700">
+                -{formatCurrency(summaryKPIs.expenses)}
               </p>
             </div>
 
-            {/* Daily Net Change */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-              <div className="flex items-center gap-1.5 text-slate-600 text-xs font-semibold mb-1">
+            {/* Net Change */}
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5">
+              <div className="flex items-center gap-1.5 text-slate-600 text-xs font-semibold mb-0.5">
                 <Layers className="h-4 w-4" />
-                <span>Net Cashflow Change</span>
+                <span>Net Cashflow</span>
               </div>
               <p
-                className={`text-lg sm:text-2xl font-bold ${
-                  dailyKPIs.netChange >= 0 ? "text-emerald-700" : "text-rose-700"
+                className={`text-lg sm:text-xl font-bold ${
+                  summaryKPIs.netChange >= 0 ? "text-emerald-700" : "text-rose-700"
                 }`}
               >
-                {dailyKPIs.netChange >= 0 ? "+" : ""}
-                {formatCurrency(dailyKPIs.netChange)}
+                {summaryKPIs.netChange >= 0 ? "+" : ""}
+                {formatCurrency(summaryKPIs.netChange)}
               </p>
             </div>
 
-            {/* Transfers Shown Separately */}
-            <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-4">
-              <div className="flex items-center gap-1.5 text-blue-700 text-xs font-semibold mb-1">
+            {/* Transfers Separately */}
+            <div className="rounded-xl border border-blue-100 bg-blue-50/40 p-3.5">
+              <div className="flex items-center gap-1.5 text-blue-700 text-xs font-semibold mb-0.5">
                 <ArrowRightLeft className="h-4 w-4" />
-                <span>Transfers (Neutral)</span>
+                <span>Transfers</span>
               </div>
-              <p className="text-lg sm:text-2xl font-bold text-blue-700">
-                {formatCurrency(dailyKPIs.transfersSum)}
+              <p className="text-lg sm:text-xl font-bold text-blue-700">
+                {formatCurrency(summaryKPIs.transfersSum)}
               </p>
               <span className="text-[11px] text-blue-600/80 mt-0.5 block">
-                {dailyKPIs.transfersCount} inter-account movement{dailyKPIs.transfersCount === 1 ? "" : "s"}
+                {summaryKPIs.transfersCount} inter-account movement{summaryKPIs.transfersCount === 1 ? "" : "s"}
               </span>
             </div>
           </div>
         </div>
       </div>
 
-      {/* 3. Action Toolbar: Search, Category, Type & Add Action Buttons */}
-      <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between mb-6">
-        <div className="flex flex-1 flex-col sm:flex-row gap-3">
-          <div className="relative flex-1 max-w-md">
+      {/* 3. Search and Multi-Facet Filtering Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 sm:p-5 mb-6 shadow-xs space-y-4">
+        <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
+          {/* Main Search Input */}
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
             <Input
-              placeholder="Search description, category, or account..."
-              className="pl-9"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder='Search by description (e.g. "project"), category, or amount...'
+              className="pl-9 pr-9"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
             />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title="Clear search"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
-          <div className="w-full sm:w-44">
-            <Select
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-            >
-              <option value="ALL">All Categories</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.name}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-          </div>
+          {/* Quick Filters */}
+          <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+            {/* Type Filter */}
+            <div className="w-full sm:w-36">
+              <Select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              >
+                <option value="ALL">All Types</option>
+                <option value="income">Income</option>
+                <option value="expense">Expense</option>
+                <option value="transfer">Transfer</option>
+              </Select>
+            </div>
 
-          <div className="w-full sm:w-36">
-            <Select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
+            {/* Category Filter */}
+            <div className="w-full sm:w-44">
+              <Select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+              >
+                <option value="ALL">All Categories</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.name}>
+                    {c.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {/* Account Filter */}
+            <div className="w-full sm:w-44">
+              <Select
+                value={accountFilter}
+                onChange={(e) => setAccountFilter(e.target.value)}
+              >
+                <option value="ALL">All Accounts</option>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+
+            {/* Advanced Filters Toggle */}
+            <Button
+              variant={showAdvancedFilters ? "default" : "outline"}
+              size="icon"
+              onClick={() => setShowAdvancedFilters((prev) => !prev)}
+              className="h-10 w-10 shrink-0 cursor-pointer"
+              title="Toggle Amount Range Filters"
             >
-              <option value="ALL">All Types</option>
-              <option value="income">Income (+)</option>
-              <option value="expense">Expense (-)</option>
-              <option value="transfer">Transfer (⇄)</option>
-            </Select>
+              <SlidersHorizontal className="h-4 w-4" />
+            </Button>
+
+            {/* Clear All Filters */}
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleClearAllFilters}
+                className="gap-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 shrink-0 text-xs font-semibold cursor-pointer"
+                title="Reset all active filters"
+              >
+                <FilterX className="h-4 w-4" />
+                Clear Filters
+              </Button>
+            )}
           </div>
+        </div>
+
+        {/* Collapsible Amount Range Filter Panel */}
+        {showAdvancedFilters && (
+          <div className="pt-3 border-t border-slate-100 flex items-center gap-3 flex-wrap bg-slate-50/60 p-3 rounded-xl animate-in fade-in">
+            <span className="text-xs font-semibold text-slate-700">Filter by Amount (₹):</span>
+            <div className="flex items-center gap-2">
+              <Input
+                type="number"
+                placeholder="Min ₹"
+                value={minAmount}
+                onChange={(e) => setMinAmount(e.target.value)}
+                className="w-28 h-8 text-xs bg-white"
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <Input
+                type="number"
+                placeholder="Max ₹"
+                value={maxAmount}
+                onChange={(e) => setMaxAmount(e.target.value)}
+                className="w-28 h-8 text-xs bg-white"
+              />
+            </div>
+            {(minAmount || maxAmount) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setMinAmount("");
+                  setMaxAmount("");
+                }}
+                className="text-xs text-slate-500 hover:text-slate-800 underline ml-2 cursor-pointer"
+              >
+                Reset Amount
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Active Filters Badges */}
+        {hasActiveFilters && (
+          <div className="flex items-center gap-2 flex-wrap pt-1 text-xs">
+            <span className="font-semibold text-slate-400">Active:</span>
+
+            {searchQuery && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                Search: &quot;{searchQuery}&quot;
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  className="hover:text-blue-900 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+
+            {typeFilter !== "ALL" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 capitalize">
+                Type: {typeFilter}
+                <button
+                  type="button"
+                  onClick={() => setTypeFilter("ALL")}
+                  className="hover:text-slate-900 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+
+            {categoryFilter !== "ALL" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                Category: {categoryFilter}
+                <button
+                  type="button"
+                  onClick={() => setCategoryFilter("ALL")}
+                  className="hover:text-slate-900 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+
+            {accountFilter !== "ALL" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                Account: {accounts.find((a) => a.id === accountFilter)?.name || accountFilter}
+                <button
+                  type="button"
+                  onClick={() => setAccountFilter("ALL")}
+                  className="hover:text-slate-900 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+
+            {(minAmount || maxAmount) && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                Amount: {minAmount ? `₹${minAmount}` : "₹0"} – {maxAmount ? `₹${maxAmount}` : "∞"}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMinAmount("");
+                    setMaxAmount("");
+                  }}
+                  className="hover:text-slate-900 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+
+            {filterMode !== "all-dates" && (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                Date: {dateTitle}
+                <button
+                  type="button"
+                  onClick={() => setFilterMode("all-dates")}
+                  className="hover:text-slate-900 cursor-pointer"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 4. Action Buttons for Transactions & Transfers */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <span className="text-sm font-bold text-slate-800">
+            {filteredTransactions.length} Transaction{filteredTransactions.length === 1 ? "" : "s"} Found
+          </span>
+          {hasActiveFilters && (
+            <span className="text-xs text-slate-400 ml-2">
+              (Filtered from {transactions.length} total)
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
@@ -422,7 +715,7 @@ export default function TransactionsPage() {
           </Button>
           <Button
             onClick={() => openAddModal("expense")}
-            className="gap-1.5 shrink-0"
+            className="gap-1.5 shrink-0 bg-blue-600 hover:bg-blue-700 text-white"
           >
             <MinusCircle className="h-4 w-4" />
             Add Expense
@@ -430,28 +723,34 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      {/* 4. Transactions List for Selected Date */}
+      {/* 5. Transactions List */}
       <div className="rounded-xl border border-slate-200/90 bg-white overflow-hidden shadow-xs">
-        <div className="border-b border-slate-100 px-6 py-4 flex justify-between items-center bg-slate-50/40">
+        <div className="border-b border-slate-100 px-6 py-3.5 flex justify-between items-center bg-slate-50/40">
           <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-            {dateTitle} — {finalDisplayTransactions.length} Record{finalDisplayTransactions.length === 1 ? "" : "s"}
+            {dateTitle}
           </span>
           <span className="text-xs text-slate-400">
             Local Timezone Display
           </span>
         </div>
 
-        {finalDisplayTransactions.length === 0 ? (
-          <EmptyState
-            icon={CalendarIcon}
-            title={`No transactions on ${dateTitle}`}
-            description="There are no income, expense, or transfer entries recorded for this selection."
-            actionLabel="Add Transaction for This Date"
-            onAction={() => openAddModal("expense")}
-          />
+        {filteredTransactions.length === 0 ? (
+          <div className="p-8 text-center">
+            <EmptyState
+              icon={Search}
+              title="No transactions matched your criteria"
+              description={
+                hasActiveFilters
+                  ? "Try adjusting your search query, selecting different categories/accounts, or clearing active filters."
+                  : "No income, expense, or transfer entries recorded yet."
+              }
+              actionLabel={hasActiveFilters ? "Clear All Filters" : "Add New Transaction"}
+              onAction={hasActiveFilters ? handleClearAllFilters : () => openAddModal("expense")}
+            />
+          </div>
         ) : (
           <div className="p-2 sm:p-4 divide-y divide-slate-100">
-            {finalDisplayTransactions.map((tx) => (
+            {filteredTransactions.map((tx) => (
               <TransactionItem key={tx.id} transaction={tx} />
             ))}
           </div>
