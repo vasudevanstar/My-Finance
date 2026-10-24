@@ -5,6 +5,7 @@ import {
   Account,
   Category,
   DashboardMetrics,
+  SavingsContribution,
   SavingsGoal,
   Transaction,
   TransactionType,
@@ -42,6 +43,29 @@ interface TransferInput {
   transactionDate: string;
 }
 
+interface CreateGoalInput {
+  name: string;
+  target_amount: number;
+  target_date?: string;
+  description?: string;
+}
+
+interface UpdateGoalInput {
+  id: string;
+  name: string;
+  target_amount: number;
+  target_date?: string;
+  description?: string;
+}
+
+interface AddContributionInput {
+  savings_goal_id: string;
+  amount: number;
+  account_id?: string;
+  description?: string;
+  contribution_date?: string;
+}
+
 interface FinanceContextType {
   accounts: Account[];
   transactions: Transaction[];
@@ -57,6 +81,18 @@ interface FinanceContextType {
   ) => Promise<{ success: boolean; error?: string }>;
   transferMoney: (
     input: TransferInput
+  ) => Promise<{ success: boolean; error?: string }>;
+  createSavingsGoal: (
+    input: CreateGoalInput
+  ) => Promise<{ success: boolean; error?: string }>;
+  updateSavingsGoal: (
+    input: UpdateGoalInput
+  ) => Promise<{ success: boolean; error?: string }>;
+  deleteSavingsGoal: (
+    id: string
+  ) => Promise<{ success: boolean; error?: string }>;
+  addSavingsContribution: (
+    input: AddContributionInput
   ) => Promise<{ success: boolean; error?: string }>;
   refreshData: () => Promise<void>;
 }
@@ -86,10 +122,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   const [loadError, setLoadError] = React.useState<string | null>(null);
 
   // Compute live balances & totals purely from transactions & accounts
-  // TRANSFERS DO NOT COUNT TOWARDS INCOME OR EXPENSES
+  // TRANSFERS & SAVINGS CONTRIBUTIONS DO NOT COUNT AS EXPENSES OR INCOME
   const metrics: DashboardMetrics = React.useMemo(() => {
-    // 1. Calculate per-account net balance from transactions
-    // Each account balance = opening_balance + sum(income into acc) - sum(expense from acc) + sum(transfers into acc) - sum(transfers out of acc)
     const computedAccounts = accounts.map((acc) => {
       const accTxs = transactions.filter(
         (t) =>
@@ -129,11 +163,13 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       .filter((acc) => acc.type === "cash")
       .reduce((sum, acc) => sum + acc.current_balance, 0);
 
-    const savingsTotal = computedAccounts
-      .filter((acc) => acc.type === "savings")
-      .reduce((sum, acc) => sum + acc.current_balance, 0);
+    // Sum of all money allocated across active savings targets
+    const savingsTotal = savingsGoals.reduce(
+      (sum, g) => sum + (g.current_amount ?? g.currentAmount ?? 0),
+      0
+    );
 
-    // Strictly count ONLY income and expense; Transfers are excluded
+    // Strictly count ONLY income and expense; Transfers & Savings are excluded
     const totalIncome = transactions
       .filter((t) => t.type === "income")
       .reduce((sum, t) => sum + t.amount, 0);
@@ -152,7 +188,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       monthReceived: totalIncome,
       monthSpent: totalExpenses,
     };
-  }, [accounts, transactions]);
+  }, [accounts, transactions, savingsGoals]);
 
   const transfers = React.useMemo(() => {
     return transactions.filter((t) => t.type === "transfer");
@@ -173,7 +209,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       }
 
       for (const t of txs) {
-        if (t.type === "transfer") continue; // NEVER count transfers in charts!
+        if (t.type === "transfer") continue;
         const txMonth = (t.transaction_date || t.date || "").slice(0, 7);
         const match = last6Months.find((m) => m.monthKey === txMonth);
         if (match) {
@@ -192,7 +228,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Load real data from Supabase
+  // Load real data from Supabase including savings_contributions
   const loadSupabaseData = React.useCallback(async () => {
     if (!isConfigured || !user) {
       setIsLoading(false);
@@ -203,8 +239,7 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
     setLoadError(null);
 
     try {
-      // 1. Efficient parallel queries using user isolation
-      const [accRes, catRes, txRes, goalRes] = await Promise.all([
+      const [accRes, catRes, txRes, goalRes, contribRes] = await Promise.all([
         supabase
           .from("accounts")
           .select("id, user_id, name, type, opening_balance, current_balance, created_at, updated_at")
@@ -223,6 +258,10 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
           .from("savings_goals")
           .select("id, user_id, name, target_amount, target_date, description, created_at, updated_at")
           .order("created_at", { ascending: false }),
+        supabase
+          .from("savings_contributions")
+          .select("id, user_id, savings_goal_id, account_id, amount, description, contribution_date, created_at")
+          .order("contribution_date", { ascending: false }),
       ]);
 
       if (accRes.error) throw new Error(accRes.error.message);
@@ -250,7 +289,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         is_system: c.is_system,
       }));
 
-      // Map transactions with account names
       const accountsMap = new Map(dbAccounts.map((a) => [a.id, a.name]));
 
       const dbTransactions: Transaction[] = (txRes.data || []).map((t: any) => {
@@ -281,17 +319,48 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         };
       });
 
-      const dbGoals: SavingsGoal[] = (goalRes.data || []).map((g: any) => ({
-        id: g.id,
-        user_id: g.user_id,
-        title: g.name,
-        name: g.name,
-        targetAmount: Number(g.target_amount),
-        target_amount: Number(g.target_amount),
-        currentAmount: 0,
-        targetDate: g.target_date || "2027-01-01",
-        category: "General",
-      }));
+      // Calculate total contributions per goal from real records
+      const contributionsMap = new Map<string, { total: number; list: SavingsContribution[] }>();
+      (contribRes.data || []).forEach((c: any) => {
+        const existing = contributionsMap.get(c.savings_goal_id) || { total: 0, list: [] };
+        const amt = Number(c.amount) || 0;
+        existing.total += amt;
+        existing.list.push({
+          id: c.id,
+          user_id: c.user_id,
+          savings_goal_id: c.savings_goal_id,
+          account_id: c.account_id,
+          account_name: accountsMap.get(c.account_id) || "Account",
+          amount: amt,
+          description: c.description || "",
+          contribution_date: c.contribution_date,
+          created_at: c.created_at,
+        });
+        contributionsMap.set(c.savings_goal_id, existing);
+      });
+
+      const dbGoals: SavingsGoal[] = (goalRes.data || []).map((g: any) => {
+        const goalContribs = contributionsMap.get(g.id);
+        const currentSaved = goalContribs?.total || 0;
+        const targetAmt = Number(g.target_amount) || 0;
+
+        return {
+          id: g.id,
+          user_id: g.user_id,
+          name: g.name,
+          title: g.name,
+          target_amount: targetAmt,
+          targetAmount: targetAmt,
+          current_amount: currentSaved,
+          currentAmount: currentSaved,
+          target_date: g.target_date || null,
+          targetDate: g.target_date || "2027-01-01",
+          description: g.description || "",
+          contributions: goalContribs?.list || [],
+          created_at: g.created_at,
+          updated_at: g.updated_at,
+        };
+      });
 
       setAccounts(dbAccounts);
       setCategories(dbCategories);
@@ -309,6 +378,253 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     loadSupabaseData();
   }, [loadSupabaseData]);
+
+  // Create Savings Goal
+  const createSavingsGoal = async (
+    input: CreateGoalInput
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!input.name || !input.name.trim()) {
+      return { success: false, error: "Please enter a valid goal name." };
+    }
+    if (!input.target_amount || input.target_amount <= 0) {
+      return { success: false, error: "Target amount must be greater than ₹0." };
+    }
+
+    const tempId = `goal-${Date.now()}`;
+    const newGoal: SavingsGoal = {
+      id: tempId,
+      user_id: user?.id,
+      name: input.name.trim(),
+      title: input.name.trim(),
+      target_amount: input.target_amount,
+      targetAmount: input.target_amount,
+      current_amount: 0,
+      currentAmount: 0,
+      target_date: input.target_date || null,
+      targetDate: input.target_date || "2027-01-01",
+      description: input.description?.trim() || null,
+      contributions: [],
+    };
+
+    setSavingsGoals((prev) => [newGoal, ...prev]);
+
+    if (isConfigured && user) {
+      try {
+        const { data, error } = await supabase
+          .from("savings_goals")
+          .insert({
+            user_id: user.id,
+            name: input.name.trim(),
+            target_amount: input.target_amount,
+            target_date: input.target_date || null,
+            description: input.description?.trim() || null,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          console.error("Supabase insert savings_goal error:", error);
+          return { success: false, error: error.message };
+        }
+        if (data) {
+          setSavingsGoals((prev) =>
+            prev.map((g) => (g.id === tempId ? { ...g, id: data.id } : g))
+          );
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    return { success: true };
+  };
+
+  // Update Savings Goal
+  const updateSavingsGoal = async (
+    input: UpdateGoalInput
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!input.name || !input.name.trim()) {
+      return { success: false, error: "Goal name cannot be empty." };
+    }
+    if (!input.target_amount || input.target_amount <= 0) {
+      return { success: false, error: "Target amount must be greater than ₹0." };
+    }
+
+    setSavingsGoals((prev) =>
+      prev.map((g) => {
+        if (g.id === input.id) {
+          return {
+            ...g,
+            name: input.name.trim(),
+            title: input.name.trim(),
+            target_amount: input.target_amount,
+            targetAmount: input.target_amount,
+            target_date: input.target_date || null,
+            targetDate: input.target_date || "2027-01-01",
+            description: input.description?.trim() || null,
+          };
+        }
+        return g;
+      })
+    );
+
+    if (isConfigured && user) {
+      try {
+        const { error } = await supabase
+          .from("savings_goals")
+          .update({
+            name: input.name.trim(),
+            target_amount: input.target_amount,
+            target_date: input.target_date || null,
+            description: input.description?.trim() || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", input.id);
+
+        if (error) {
+          return { success: false, error: error.message };
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    return { success: true };
+  };
+
+  // Delete Savings Goal
+  const deleteSavingsGoal = async (
+    id: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    setSavingsGoals((prev) => prev.filter((g) => g.id !== id));
+
+    if (isConfigured && user) {
+      try {
+        const { error } = await supabase
+          .from("savings_goals")
+          .delete()
+          .eq("id", id);
+
+        if (error) {
+          return { success: false, error: error.message };
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    return { success: true };
+  };
+
+  // Add Savings Contribution: Allocates money toward a goal
+  // IMPORTANT: A savings contribution represents money allocated toward a goal; NOT an expense!
+  const addSavingsContribution = async (
+    input: AddContributionInput
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!input.amount || input.amount <= 0) {
+      return { success: false, error: "Contribution amount must be greater than ₹0." };
+    }
+
+    const targetGoal = savingsGoals.find((g) => g.id === input.savings_goal_id);
+    if (!targetGoal) {
+      return { success: false, error: "Savings goal not found." };
+    }
+
+    const sourceAccount = input.account_id
+      ? accounts.find((a) => a.id === input.account_id)
+      : undefined;
+
+    // Check balance if an account was designated
+    if (sourceAccount) {
+      const avail = sourceAccount.current_balance ?? sourceAccount.balance ?? 0;
+      if (input.amount > avail) {
+        return {
+          success: false,
+          error: `Insufficient balance in ${sourceAccount.name}. Available: ₹${avail.toLocaleString("en-IN")}`,
+        };
+      }
+    }
+
+    const contribId = `contrib-${Date.now()}`;
+    const newContrib: SavingsContribution = {
+      id: contribId,
+      user_id: user?.id,
+      savings_goal_id: input.savings_goal_id,
+      account_id: input.account_id || null,
+      account_name: sourceAccount?.name,
+      amount: input.amount,
+      description: input.description?.trim() || `Allocated toward ${targetGoal.name}`,
+      contribution_date: input.contribution_date || new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+
+    // 1. Update goal current amount
+    setSavingsGoals((prev) =>
+      prev.map((g) => {
+        if (g.id === input.savings_goal_id) {
+          const updatedCurrent = (g.current_amount ?? g.currentAmount ?? 0) + input.amount;
+          const updatedList = [newContrib, ...(g.contributions || [])];
+          return {
+            ...g,
+            current_amount: updatedCurrent,
+            currentAmount: updatedCurrent,
+            contributions: updatedList,
+          };
+        }
+        return g;
+      })
+    );
+
+    // 2. If source account selected, shift funds from account into savings reserve
+    if (input.account_id) {
+      setAccounts((prev) =>
+        prev.map((a) => {
+          if (a.id === input.account_id) {
+            const current = a.current_balance ?? a.balance ?? 0;
+            const updated = current - input.amount;
+            return { ...a, current_balance: updated, balance: updated };
+          }
+          return a;
+        })
+      );
+    }
+
+    // 3. Persist to Supabase if online
+    if (isConfigured && user) {
+      try {
+        const { error: contribError } = await supabase
+          .from("savings_contributions")
+          .insert({
+            user_id: user.id,
+            savings_goal_id: input.savings_goal_id,
+            account_id: input.account_id || null,
+            amount: input.amount,
+            description: input.description?.trim() || `Allocated toward ${targetGoal.name}`,
+            contribution_date: (input.contribution_date || new Date().toISOString()).split("T")[0],
+          });
+
+        if (contribError) {
+          console.error("Supabase insert savings_contribution error:", contribError);
+          return { success: false, error: contribError.message };
+        }
+
+        if (input.account_id && sourceAccount) {
+          const current = sourceAccount.current_balance ?? sourceAccount.balance ?? 0;
+          await supabase
+            .from("accounts")
+            .update({
+              current_balance: current - input.amount,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", input.account_id);
+        }
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
+    }
+
+    return { success: true };
+  };
 
   // Add Income / Expense Transaction Handler
   const addTransaction = async (
@@ -348,7 +664,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       date: input.transaction_date.split("T")[0],
     };
 
-    // Optimistic Local State Update for Accounts & Balances
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
         if (acc.id === input.account_id) {
@@ -368,17 +683,15 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
-    // Prepend transaction to history
     setTransactions((prev) => {
       const updated = [newTransaction, ...prev];
       updateMonthlyChart(updated);
       return updated;
     });
 
-    // Synchronize with Supabase
     if (isConfigured && user) {
       try {
-        const { data: inserted, error: insertTxError } = await supabase
+        const { error: insertTxError } = await supabase
           .from("transactions")
           .insert({
             user_id: user.id,
@@ -388,16 +701,12 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             amount: input.amount,
             description: input.description || null,
             transaction_date: input.transaction_date.split("T")[0],
-          })
-          .select()
-          .single();
+          });
 
         if (insertTxError) {
-          console.error("Supabase insert transaction error:", insertTxError);
           return { success: false, error: insertTxError.message };
         }
 
-        // Update real balance in accounts table
         const targetAccount = accounts.find((a) => a.id === input.account_id);
         if (targetAccount) {
           const current = targetAccount.current_balance ?? targetAccount.balance ?? 0;
@@ -413,7 +722,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             .eq("id", input.account_id);
         }
       } catch (err: any) {
-        console.error("Failed to sync transaction to Supabase:", err);
         return { success: false, error: err.message };
       }
     }
@@ -488,7 +796,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       date: input.transactionDate.split("T")[0],
     };
 
-    // Optimistic balance shift: Decrement source, increment destination
     setAccounts((prevAccounts) =>
       prevAccounts.map((acc) => {
         if (acc.id === input.fromAccountId) {
@@ -505,10 +812,8 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
       })
     );
 
-    // Prepend to transaction history
     setTransactions((prev) => [newTransferTransaction, ...prev]);
 
-    // Synchronize with Supabase
     if (isConfigured && user) {
       try {
         const { error: insertTxError } = await supabase
@@ -525,7 +830,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
           });
 
         if (insertTxError) {
-          console.error("Supabase transfer insert error:", insertTxError);
           return { success: false, error: insertTxError.message };
         }
 
@@ -549,7 +853,6 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
             .eq("id", input.toAccountId),
         ]);
       } catch (err: any) {
-        console.error("Failed to sync transfer to Supabase:", err);
         return { success: false, error: err.message };
       }
     }
@@ -571,6 +874,10 @@ export function FinanceProvider({ children }: { children: React.ReactNode }) {
         loadError,
         addTransaction,
         transferMoney,
+        createSavingsGoal,
+        updateSavingsGoal,
+        deleteSavingsGoal,
+        addSavingsContribution,
         refreshData: loadSupabaseData,
       }}
     >

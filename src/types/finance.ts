@@ -48,19 +48,35 @@ export interface Transaction {
   date?: string;
 }
 
+export interface SavingsContribution {
+  id: string;
+  user_id?: string;
+  savings_goal_id: string;
+  account_id?: string | null;
+  account_name?: string;
+  amount: number;
+  description?: string;
+  contribution_date: string;
+  created_at?: string;
+}
+
 export interface SavingsGoal {
   id: string;
   user_id?: string;
-  title: string;
-  name?: string;
-  targetAmount: number;
-  target_amount?: number;
-  currentAmount: number;
-  targetDate: string;
-  target_date?: string;
+  name: string;
+  title?: string; // compatibility
+  target_amount: number;
+  targetAmount?: number; // compatibility
+  current_amount: number;
+  currentAmount?: number; // compatibility
+  target_date?: string | null;
+  targetDate?: string; // compatibility
+  description?: string | null;
   category?: string;
-  description?: string;
   iconName?: string;
+  contributions?: SavingsContribution[];
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface DashboardMetrics {

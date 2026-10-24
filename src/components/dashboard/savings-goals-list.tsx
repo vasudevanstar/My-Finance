@@ -11,10 +11,13 @@ export function SavingsGoalsList({ goals }: SavingsGoalsListProps) {
   return (
     <div className="space-y-4">
       {goals.map((goal) => {
+        const current = goal.current_amount ?? goal.currentAmount ?? 0;
+        const target = goal.target_amount ?? goal.targetAmount ?? 1;
         const percentage = Math.min(
-          Math.round((goal.currentAmount / goal.targetAmount) * 100),
+          Math.round((current / target) * 100),
           100
         );
+        const remaining = Math.max(target - current, 0);
 
         return (
           <div
@@ -28,30 +31,36 @@ export function SavingsGoalsList({ goals }: SavingsGoalsListProps) {
                 </div>
                 <div>
                   <h4 className="text-sm font-semibold text-slate-800">
-                    {goal.title}
+                    {goal.name || goal.title}
                   </h4>
                   <span className="text-xs text-slate-400">
-                    Target: {goal.targetDate}
+                    Target: {goal.target_date || goal.targetDate || "Ongoing"}
                   </span>
                 </div>
               </div>
 
-              <span className="text-xs font-bold text-slate-700">
-                {percentage}%
-              </span>
+              <div className="text-right">
+                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                  {percentage}% completed
+                </span>
+              </div>
             </div>
 
             {/* Progress track */}
-            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
+            <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200 my-2">
               <div
-                className="h-full rounded-full bg-blue-600 transition-all duration-500"
+                className="h-full rounded-full bg-gradient-to-r from-blue-600 to-indigo-600 transition-all duration-500"
                 style={{ width: `${percentage}%` }}
               />
             </div>
 
-            <div className="flex justify-between items-center text-xs mt-2 text-slate-500">
-              <span>Saved: {formatCurrency(goal.currentAmount)}</span>
-              <span>Goal: {formatCurrency(goal.targetAmount)}</span>
+            <div className="flex justify-between items-center text-xs mt-1.5 text-slate-600 font-medium">
+              <span>
+                {formatCurrency(current)} / {formatCurrency(target)}
+              </span>
+              <span className="text-slate-400">
+                Remaining: {formatCurrency(remaining)}
+              </span>
             </div>
           </div>
         );
