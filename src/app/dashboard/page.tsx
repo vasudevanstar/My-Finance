@@ -22,6 +22,7 @@ import { TransactionItem } from "@/components/dashboard/transaction-item";
 import { ReceivedSpentChart } from "@/components/dashboard/received-spent-chart";
 import { SavingsGoalsList } from "@/components/dashboard/savings-goals-list";
 import { AddTransactionModal } from "@/components/dashboard/add-transaction-modal";
+import { TransferModal } from "@/components/dashboard/transfer-modal";
 import { useFinance } from "@/contexts/finance-context";
 import { useAuth } from "@/contexts/auth-context";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ export default function DashboardPage() {
 
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalType, setModalType] = React.useState<TransactionType>("expense");
+  const [transferModalOpen, setTransferModalOpen] = React.useState(false);
   const [notification, setNotification] = React.useState<string | null>(null);
 
   const openAddModal = (type: TransactionType) => {
@@ -42,7 +44,7 @@ export default function DashboardPage() {
 
   const handleSuccessNotice = (message: string) => {
     setNotification(message);
-    setTimeout(() => setNotification(null), 4000);
+    setTimeout(() => setNotification(null), 4500);
   };
 
   return (
@@ -113,7 +115,7 @@ export default function DashboardPage() {
         />
       </section>
 
-      {/* Quick Actions Panel: Add Income & Add Expense */}
+      {/* Quick Actions Panel: Add Income, Add Expense, Transfer Money */}
       <section className="mb-8">
         <h2 className="text-sm font-bold text-slate-800 uppercase tracking-wider mb-3">
           Quick Actions
@@ -134,11 +136,11 @@ export default function DashboardPage() {
             onClick={() => openAddModal("expense")}
           />
           <QuickActionButton
-            label="Quick Transfer"
+            label="Transfer Money"
             description="Move funds between bank and cash wallet"
             icon={ArrowRightLeft}
             variant="transfer"
-            onClick={() => openAddModal("expense")}
+            onClick={() => setTransferModalOpen(true)}
           />
         </div>
       </section>
@@ -183,8 +185,8 @@ export default function DashboardPage() {
       {/* Recent Transactions Section */}
       <section>
         <DashboardCard
-          title="Recent Transactions"
-          description="Your latest recorded college income and expenditures"
+          title="Recent Activity & Transfers"
+          description="Your latest recorded college income, expenses, and inter-account transfers"
           action={
             <Link href="/transactions">
               <Button variant="outline" size="sm" className="gap-1 text-xs">
@@ -194,7 +196,7 @@ export default function DashboardPage() {
           }
           contentClassName="p-2 sm:p-4 divide-y divide-slate-100"
         >
-          {transactions.slice(0, 5).map((tx) => (
+          {transactions.slice(0, 6).map((tx) => (
             <TransactionItem key={tx.id} transaction={tx} />
           ))}
         </DashboardCard>
@@ -205,6 +207,13 @@ export default function DashboardPage() {
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         defaultType={modalType}
+        onSuccessNotice={handleSuccessNotice}
+      />
+
+      {/* Dedicated Transfer Money Modal */}
+      <TransferModal
+        open={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
         onSuccessNotice={handleSuccessNotice}
       />
     </AppShell>

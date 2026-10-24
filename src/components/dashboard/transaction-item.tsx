@@ -13,7 +13,7 @@ import {
   User,
   CreditCard,
   Award,
-  DollarSign,
+  ArrowRightLeft,
 } from "lucide-react";
 import { Transaction } from "@/types/finance";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
@@ -40,6 +40,7 @@ const categoryIcons: Record<string, React.ElementType> = {
   Scholarship: Award,
   "Part-time": Briefcase,
   "Part-time Job": Briefcase,
+  Transfer: ArrowRightLeft,
   Other: CircleDollarSign,
 };
 
@@ -52,15 +53,25 @@ export function TransactionItem({
   const isTransfer = transaction.type === "transfer";
 
   const catName =
-    transaction.category_name || transaction.category || "Other";
+    transaction.type === "transfer"
+      ? "Internal Transfer"
+      : transaction.category_name || transaction.category || "Other";
+
   const accName =
-    transaction.account_name || transaction.account || "Account";
+    transaction.type === "transfer" && (transaction.source_account_name || transaction.destination_account_name)
+      ? `${transaction.source_account_name || "Account"} → ${transaction.destination_account_name || "Account"}`
+      : transaction.account_name || transaction.account || "Account";
+
   const displayTitle =
-    transaction.description || transaction.title || catName;
+    transaction.description ||
+    (transaction.type === "transfer" ? accName : transaction.title || catName);
+
   const displayDate =
     transaction.transaction_date || transaction.date || new Date().toISOString();
 
-  const CategoryIcon = categoryIcons[catName] || CircleDollarSign;
+  const CategoryIcon = isTransfer
+    ? ArrowRightLeft
+    : categoryIcons[catName] || CircleDollarSign;
 
   return (
     <div
@@ -85,9 +96,16 @@ export function TransactionItem({
         </div>
 
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-slate-900 truncate">
-            {displayTitle}
-          </p>
+          <div className="flex items-center gap-2">
+            <p className="text-sm font-medium text-slate-900 truncate">
+              {displayTitle}
+            </p>
+            {isTransfer && (
+              <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 shrink-0">
+                Transfer
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-2 text-xs text-slate-500 mt-0.5">
             <span className="truncate">{catName}</span>
             <span>•</span>
@@ -103,11 +121,11 @@ export function TransactionItem({
             isIncome
               ? "text-emerald-600"
               : isTransfer
-              ? "text-blue-600"
+              ? "text-blue-700"
               : "text-slate-900"
           )}
         >
-          {isIncome ? "+" : isTransfer ? "" : "-"}
+          {isIncome ? "+" : isTransfer ? "⇄ " : "-"}
           {formatCurrency(transaction.amount)}
         </p>
         <p className="text-xs text-slate-400 mt-0.5">

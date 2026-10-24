@@ -36,7 +36,9 @@ export interface Transaction {
   description?: string;
   transaction_date: string; // ISO string or YYYY-MM-DD
   source_account_id?: string;
+  source_account_name?: string;
   destination_account_id?: string;
+  destination_account_name?: string;
   created_at?: string;
   updated_at?: string;
   // Compatibility fields
