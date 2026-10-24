@@ -30,6 +30,47 @@ interface ChartDataPoint {
   dateKey: string;
 }
 
+// Custom Recharts Tooltip with Indian Rupee (INR) formatting (declared at module level)
+function CustomTooltip({ active, payload, label }: any) {
+  if (active && payload && payload.length) {
+    const receivedVal = payload.find((p: any) => p.dataKey === "received")?.value || 0;
+    const spentVal = payload.find((p: any) => p.dataKey === "spent")?.value || 0;
+    const netSavings = receivedVal - spentVal;
+
+    return (
+      <div className="rounded-xl border border-slate-200 bg-white/95 p-3.5 shadow-lg backdrop-blur-sm text-xs min-w-[200px]">
+        <p className="font-bold text-slate-800 border-b border-slate-100 pb-1.5 mb-2">
+          {label} Flow Summary
+        </p>
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-emerald-700">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Received (Income):
+            </span>
+            <span className="font-bold">{formatCurrency(receivedVal)}</span>
+          </div>
+          <div className="flex items-center justify-between text-rose-700">
+            <span className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full bg-rose-500" />
+              Spent (Expenses):
+            </span>
+            <span className="font-bold">{formatCurrency(spentVal)}</span>
+          </div>
+          <div className="border-t border-slate-100 pt-1.5 flex items-center justify-between font-semibold text-slate-700">
+            <span>Net Surplus:</span>
+            <span className={netSavings >= 0 ? "text-emerald-600" : "text-rose-600"}>
+              {netSavings >= 0 ? "+" : ""}
+              {formatCurrency(netSavings)}
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return null;
+}
+
 export function ReceivedSpentChart({ transactions = [] }: ReceivedSpentChartProps) {
   const [timeframe, setTimeframe] = React.useState<AnalyticsTimeframe>("monthly");
   const [startDate, setStartDate] = React.useState<string>("");
@@ -128,47 +169,6 @@ export function ReceivedSpentChart({ transactions = [] }: ReceivedSpentChartProp
   // Total summary in current view
   const totalReceived = chartData.reduce((acc, curr) => acc + curr.received, 0);
   const totalSpent = chartData.reduce((acc, curr) => acc + curr.spent, 0);
-
-  // Custom Recharts Tooltip with Indian Rupee (INR) formatting
-  const CustomTooltip = ({ active, payload, label }: any) => {
-    if (active && payload && payload.length) {
-      const receivedVal = payload.find((p: any) => p.dataKey === "received")?.value || 0;
-      const spentVal = payload.find((p: any) => p.dataKey === "spent")?.value || 0;
-      const netSavings = receivedVal - spentVal;
-
-      return (
-        <div className="rounded-xl border border-slate-200 bg-white/95 p-3.5 shadow-lg backdrop-blur-sm text-xs min-w-[200px]">
-          <p className="font-bold text-slate-800 border-b border-slate-100 pb-1.5 mb-2">
-            {label} Flow Summary
-          </p>
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-emerald-700">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                Received (Income):
-              </span>
-              <span className="font-bold">{formatCurrency(receivedVal)}</span>
-            </div>
-            <div className="flex items-center justify-between text-rose-700">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-rose-500" />
-                Spent (Expenses):
-              </span>
-              <span className="font-bold">{formatCurrency(spentVal)}</span>
-            </div>
-            <div className="border-t border-slate-100 pt-1.5 flex items-center justify-between font-semibold text-slate-700">
-              <span>Net Surplus:</span>
-              <span className={netSavings >= 0 ? "text-emerald-600" : "text-rose-600"}>
-                {netSavings >= 0 ? "+" : ""}
-                {formatCurrency(netSavings)}
-              </span>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <div className="w-full flex flex-col">
