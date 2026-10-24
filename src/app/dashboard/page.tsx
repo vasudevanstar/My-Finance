@@ -226,7 +226,7 @@ export default function DashboardPage() {
         <div className="lg:col-span-2">
           <DashboardCard
             title="Received vs Spent"
-            description="Live monthly flow breakdown from real transactions (Transfers excluded)"
+            description="Live comparison of money received and money spent (Transfers strictly excluded)"
             action={
               <Link href="/reports">
                 <Button variant="ghost" size="sm" className="gap-1 text-xs">
@@ -235,7 +235,7 @@ export default function DashboardPage() {
               </Link>
             }
           >
-            <ReceivedSpentChart data={chartData} />
+            <ReceivedSpentChart transactions={transactions} />
           </DashboardCard>
         </div>
 

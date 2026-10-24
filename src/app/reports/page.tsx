@@ -49,10 +49,10 @@ export default function ReportsPage() {
         {/* Income vs Expenses Bar breakdown */}
         <div className="lg:col-span-2">
           <DashboardCard
-            title="Net Cashflow Trend"
-            description="Semester-long comparative breakdown of incoming funds vs outgoing spending"
+            title="Received vs Spent Analytics"
+            description="Comparative breakdown of incoming earnings vs outgoing expenditures (Transfers excluded)"
           >
-            <ReceivedSpentChart data={chartData} />
+            <ReceivedSpentChart transactions={transactions} />
           </DashboardCard>
         </div>
 
