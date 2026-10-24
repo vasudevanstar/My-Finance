@@ -6,11 +6,11 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { User, Database, CheckCircle2, ShieldCheck, LogOut } from "lucide-react";
+import { User, CheckCircle2, LogOut } from "lucide-react";
 import { useAuth } from "@/contexts/auth-context";
 
 export default function SettingsPage() {
-  const { profile, updateProfile, signOut, isConfigured } = useAuth();
+  const { profile, updateProfile, signOut } = useAuth();
   const [saved, setSaved] = React.useState(false);
   const [fullName, setFullName] = React.useState(profile?.fullName || "Alex Morgan");
   const [major, setMajor] = React.useState(profile?.major || "Computer Science");
@@ -126,37 +126,6 @@ export default function SettingsPage() {
                 <Button type="submit">Save Changes</Button>
               </div>
             </form>
-          </CardContent>
-        </Card>
-
-        {/* Supabase Connection Status Card */}
-        <Card className="border-blue-100 bg-gradient-to-r from-white via-white to-blue-50/20">
-          <CardHeader>
-            <div className="flex items-center gap-2 text-slate-800">
-              <Database className="h-5 w-5 text-blue-600" />
-              <CardTitle>Supabase Authentication Status</CardTitle>
-            </div>
-            <CardDescription>
-              {isConfigured
-                ? "Connected directly to live Supabase Auth instance."
-                : "Active in developer test session mode with instant credential persistence."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-4 text-xs font-mono text-slate-600 space-y-1">
-              <div>
-                NEXT_PUBLIC_SUPABASE_URL = &quot;{process.env.NEXT_PUBLIC_SUPABASE_URL || "configured"}&quot;
-              </div>
-              <div>
-                NEXT_PUBLIC_SUPABASE_ANON_KEY = &quot;{process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "••••••••••••••••" : "configured"}&quot;
-              </div>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-slate-600">
-              <ShieldCheck className="h-4 w-4 text-emerald-600" />
-              <span>
-                Client key isolation verified: Service-role admin keys are strictly restricted from frontend bundles.
-              </span>
-            </div>
           </CardContent>
         </Card>
       </div>
