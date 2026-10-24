@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+    <linearGradient id="accentGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#e0e7ff" />
+    </linearGradient>
+  </defs>
+  <!-- Rounded App Icon Background -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)" />
+  
+  <!-- Subtle decorative glow -->
+  <circle cx="256" cy="180" r="140" fill="#3b82f6" opacity="0.3" filter="blur(20px)" />
+  
+  <!-- Indian Rupee (₹) Symbol + Wallet / Growth Motif -->
+  <!-- Rupee Symbol -->
+  <path d="M168 140 H344 M168 188 H312 M168 188 C216 188 280 188 280 260 C280 324 220 328 176 328 M228 328 L328 424" 
+        stroke="url(#accentGrad)" 
+        stroke-width="36" 
+        stroke-linecap="round" 
+        stroke-linejoin="round" 
+        fill="none" />
+        
+  <!-- Small Star / Sparkle accent in top-right -->
+  <path d="M360 120 L368 144 L392 152 L368 160 L360 184 L352 160 L328 152 L352 144 Z" 
+        fill="#93c5fd" />
+</svg>

@@ -1,0 +1,19 @@
+{
+  "name": "My Finance - Student Budget & Goals",
+  "short_name": "My Finance",
+  "description": "Student personal finance dashboard to track college budgets, income, expenses, and savings goals in INR.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "orientation": "portrait-primary",
+  "categories": ["finance", "productivity", "education"],
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
